@@ -181,18 +181,16 @@ export default function App() {
   };
 
   const UnifiedForm = () => {
-    const [mappingType, setMappingType] = useState('point');
     const [showPicker, setShowPicker] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
 
     const [formData, setFormData] = useState({
-      roadName: '', condition: 'Baik', year: new Date().getFullYear().toString(),
-      description: '', videoUrl: '', photos: [], surfaceTypes: [],
+      roadName: '', condition: 'Baik',
+      description: '', photos: [], surfaceTypes: [],
       lat: '', lng: '', accuracy: 0
     });
 
     const [isTracking, setIsTracking] = useState(false);
-    const [isSimulating, setIsSimulating] = useState(false);
     const [path, setPath] = useState([]);
     const [distance, setDistance] = useState(0); 
     const watchIdRef = useRef(null);
@@ -250,39 +248,14 @@ export default function App() {
       );
     };
 
-    const toggleSimulation = () => {
-      if (isTracking || isSimulating) {
-        clearInterval(watchIdRef.current);
-        setIsTracking(false); setIsSimulating(false); showToast("Perekaman dihentikan", "info");
-      } else {
-        setPath([]); setDistance(0); setIsTracking(true); setIsSimulating(true);
-        showToast("Mulai simulasi merekam jalur...", "success");
-        let currentLat = -0.485; let currentLng = 117.155;
-        
-        watchIdRef.current = setInterval(() => {
-          currentLat += (Math.random() - 0.2) * 0.0004;
-          currentLng += (Math.random() - 0.2) * 0.0004;
-          setPath(prevPath => {
-            const newPoint = [currentLat, currentLng];
-            if (prevPath.length > 0) {
-              const lastPoint = prevPath[prevPath.length - 1];
-              const dist = calculateDistance(lastPoint[0], lastPoint[1], currentLat, currentLng);
-              setDistance(d => d + dist);
-            }
-            return [...prevPath, newPoint];
-          });
-        }, 1500);
-      }
-    };
-
     const toggleTracking = () => {
       if (isTracking) {
-        if (isSimulating) { toggleSimulation(); return; }
         navigator.geolocation.clearWatch(watchIdRef.current);
-        setIsTracking(false); showToast("Perekaman dihentikan", "info");
+        setIsTracking(false); 
+        showToast("Perekaman dihentikan", "info");
       } else {
         if (!navigator.geolocation) return showToast("GPS tidak didukung", "error");
-        setPath([]); setDistance(0); setIsTracking(true); setIsSimulating(false);
+        setPath([]); setDistance(0); setIsTracking(true); 
         showToast("Mulai merekam jalur...", "success");
 
         watchIdRef.current = navigator.geolocation.watchPosition(
@@ -303,7 +276,7 @@ export default function App() {
           (err) => {
              setIsTracking(false);
              if (err.message.includes("permissions policy") || err.code === 1) {
-                showToast("GPS diblokir. Gunakan tombol 'Simulasi Track' di sebelahnya.", "error");
+                showToast("Akses GPS diblokir oleh browser.", "error");
              } else {
                 showToast(`Error GPS: ${err.message}`, "error");
              }
@@ -318,7 +291,7 @@ export default function App() {
       const geojson = {
         type: "FeatureCollection",
         features: [{
-          type: "Feature", properties: { name: formData.roadName, distance: distance, year: formData.year },
+          type: "Feature", properties: { name: formData.roadName, distance: distance, year: new Date().getFullYear() },
           geometry: { type: "LineString", coordinates: path.map(p => [p[1], p[0]]) }
         }]
       };
@@ -330,42 +303,45 @@ export default function App() {
     const handleSubmit = async (e) => {
       e.preventDefault();
       if (!formData.roadName) return showToast("Nama jalan wajib diisi", "error");
-
-      if (!supabase) {
-        showToast("Koneksi database belum aktif. Harap hubungkan ke Supabase.", "error");
-        return;
-      }
+      if (!formData.lat && !formData.lng && path.length < 2) return showToast("Mohon isi Titik Lokasi atau Rekam Track GPS", "error");
 
       const basePayload = {
         roadName: formData.roadName,
         condition: formData.condition,
-        year: parseInt(formData.year) || new Date().getFullYear(),
+        year: new Date().getFullYear(),
         surfaceTypes: formData.surfaceTypes || [],
         description: formData.description,
-        videoUrl: formData.videoUrl || '',
         photos: formData.photos || [],
         surveyDate: new Date().toISOString()
       };
 
-      if (mappingType === 'point') {
-        if (!formData.lat || !formData.lng) return showToast("Koordinat GPS wajib diisi!", "error");
-        basePayload.type = 'point';
-        basePayload.location = { lat: parseFloat(formData.lat), lng: parseFloat(formData.lng) };
-      } else {
-        if (path.length < 2) return showToast("Jalur terlalu pendek untuk disimpan", "error");
+      if (path.length >= 2) {
         basePayload.type = 'track';
         basePayload.trackPath = path;
         basePayload.distanceMeters = Math.round(distance);
+        if (formData.lat && formData.lng) {
+          basePayload.location = { lat: parseFloat(formData.lat), lng: parseFloat(formData.lng) };
+        }
+      } else {
+        basePayload.type = 'point';
+        basePayload.location = { lat: parseFloat(formData.lat), lng: parseFloat(formData.lng) };
       }
 
       setIsSaving(true);
       try {
-        const { error } = await supabase.from('roads').insert([basePayload]);
-        if (error) throw error;
+        if (!supabase) {
+          // MODE PREVIEW: Simpan ke state memori lokal agar tampil di Peta
+          setRoadsData(prevData => [{ ...basePayload, id: Date.now(), created_at: new Date().toISOString() }, ...prevData]);
+          showToast("Disimpan sementara (Mode Preview Lokal)", "success");
+        } else {
+          // MODE PRODUCTION: Simpan ke Supabase sungguhan
+          const { error } = await supabase.from('roads').insert([basePayload]);
+          if (error) throw error;
+          showToast("Data berhasil disimpan ke Supabase!", "success");
+        }
 
-        showToast("Data berhasil disimpan ke Supabase!", "success");
-        setFormData({ roadName: '', condition: 'Baik', year: new Date().getFullYear().toString(), description: '', videoUrl: '', photos: [], surfaceTypes: [], lat: '', lng: '', accuracy: 0 });
-        if (mappingType === 'track') { setPath([]); setDistance(0); }
+        setFormData({ roadName: '', condition: 'Baik', description: '', photos: [], surfaceTypes: [], lat: '', lng: '', accuracy: 0 });
+        setPath([]); setDistance(0);
         setActiveTab('map');
       } catch (err) {
         showToast(`Error: ${err.message}`, "error");
@@ -376,143 +352,119 @@ export default function App() {
 
     return (
       <form onSubmit={handleSubmit} className="px-4 py-6 space-y-6 max-w-2xl mx-auto pb-36">
-        <div className="flex bg-slate-100 p-1.5 rounded-xl mb-4 shadow-inner">
-          <button type="button" onClick={() => setMappingType('point')} disabled={isTracking}
-            className={`flex flex-1 justify-center items-center gap-2 py-3 text-sm font-bold rounded-lg transition-all ${mappingType === 'point' ? 'bg-white shadow text-blue-600 scale-[1.02]' : 'text-slate-500 hover:text-slate-700'}`}>
-            <MapPin size={18} /> Titik (Point)
-          </button>
-          <button type="button" onClick={() => setMappingType('track')} disabled={isTracking}
-            className={`flex flex-1 justify-center items-center gap-2 py-3 text-sm font-bold rounded-lg transition-all ${mappingType === 'track' ? 'bg-white shadow text-blue-600 scale-[1.02]' : 'text-slate-500 hover:text-slate-700'}`}>
-            <Activity size={18} /> Jalur (Track)
-          </button>
-        </div>
-
         <h2 className="text-2xl font-bold border-b border-slate-200 pb-3 text-slate-800">
-          Form Data {mappingType === 'point' ? 'Titik Lokasi' : 'Jalur Jalan'}
+          Input Data Jalan
         </h2>
 
-        {mappingType === 'point' ? (
-          <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100 shadow-sm">
-            <label className="block text-sm font-semibold text-slate-700 mb-3">Koordinat GPS *</label>
-            <div className="flex flex-col sm:flex-row gap-3 mb-3">
-              <button type="button" onClick={getGPS} className="flex-1 bg-blue-100 text-blue-700 py-3.5 rounded-xl flex justify-center items-center gap-2 hover:bg-blue-200 active:scale-[0.98] transition-transform font-bold shadow-sm">
-                <Navigation size={18} /> Deteksi Otomatis
-              </button>
-              <button type="button" onClick={() => setShowPicker(true)} className="flex-1 bg-white text-slate-700 py-3.5 rounded-xl flex justify-center items-center gap-2 hover:bg-slate-50 border border-slate-200 active:scale-[0.98] transition-transform font-bold shadow-sm">
-                <MapIcon size={18} /> Pilih di Peta
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <input required type="number" step="any" placeholder="Latitude" className="w-full p-3 border border-slate-300 rounded-xl text-[16px] bg-white shadow-inner focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                value={formData.lat} onChange={e => setFormData({...formData, lat: e.target.value})} />
-              <input required type="number" step="any" placeholder="Longitude" className="w-full p-3 border border-slate-300 rounded-xl text-[16px] bg-white shadow-inner focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                value={formData.lng} onChange={e => setFormData({...formData, lng: e.target.value})} />
-            </div>
-            {formData.accuracy > 0 && <p className="text-xs text-green-600 mt-2 font-medium flex items-center gap-1"><Wifi size={12}/> Akurasi GPS: ±{formData.accuracy} meter</p>}
+        {/* 1. Titik Lokasi */}
+        <div className="space-y-3">
+          <label className="block text-sm font-bold text-slate-700">1. Titik Lokasi</label>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <button type="button" onClick={getGPS} className="flex-1 bg-blue-100 text-blue-700 py-3 rounded-xl flex justify-center items-center gap-2 hover:bg-blue-200 active:scale-[0.98] transition-transform font-bold shadow-sm text-sm">
+              <Navigation size={18} /> Deteksi Otomatis
+            </button>
+            <button type="button" onClick={() => setShowPicker(true)} className="flex-1 bg-white text-slate-700 py-3 rounded-xl flex justify-center items-center gap-2 hover:bg-slate-50 border border-slate-200 active:scale-[0.98] transition-transform font-bold shadow-sm text-sm">
+              <MapIcon size={18} /> Pilih di Peta
+            </button>
           </div>
-        ) : (
-          <div className="bg-slate-800 text-white p-5 rounded-2xl shadow-xl text-center relative overflow-hidden">
-            <div className="text-4xl font-mono mb-1 font-bold">
-              {(distance / 1000).toFixed(2)} <span className="text-lg text-slate-300 font-sans">KM</span>
+          <div className="grid grid-cols-2 gap-3">
+            <input type="number" step="any" placeholder="Latitude" className="w-full p-3 border border-slate-300 rounded-xl text-[15px] bg-slate-50 shadow-inner focus:outline-none"
+              value={formData.lat} onChange={e => setFormData({...formData, lat: e.target.value})} />
+            <input type="number" step="any" placeholder="Longitude" className="w-full p-3 border border-slate-300 rounded-xl text-[15px] bg-slate-50 shadow-inner focus:outline-none"
+              value={formData.lng} onChange={e => setFormData({...formData, lng: e.target.value})} />
+          </div>
+          {formData.accuracy > 0 && <p className="text-xs text-green-600 font-medium flex items-center gap-1"><Wifi size={12}/> Akurasi GPS: ±{formData.accuracy} meter</p>}
+        </div>
+
+        {/* 2. Nama Jalan */}
+        <div className="space-y-3">
+          <label className="block text-sm font-bold text-slate-700">2. Nama Jalan</label>
+          <input required type="text" placeholder="Cth: Jl. Ahmad Yani" className="w-full p-3 border border-slate-300 rounded-xl text-[15px] shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            value={formData.roadName} onChange={e => setFormData({...formData, roadName: e.target.value})} />
+        </div>
+
+        {/* 3. Kondisi Jalan */}
+        <div className="space-y-3">
+          <label className="block text-sm font-bold text-slate-700">3. Kondisi Jalan</label>
+          <select className="w-full p-3 border border-slate-300 rounded-xl text-[15px] shadow-sm bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            value={formData.condition} onChange={e => setFormData({...formData, condition: e.target.value})}>
+            <option>Baik</option><option>Sedang</option><option>Rusak Ringan</option><option>Rusak Berat</option>
+          </select>
+        </div>
+
+        {/* 4. Jalan Saat Ini */}
+        <div className="space-y-3">
+          <label className="block text-sm font-bold text-slate-700">4. Jalan Saat Ini (Jenis Permukaan)</label>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {['Aspal', 'Beton', 'Tanah', 'Paving Block', 'Berbatuan', 'Lainnya'].map(tipe => (
+              <label key={tipe} className={`flex items-center gap-2 text-sm border p-3 rounded-xl cursor-pointer transition-colors shadow-sm ${formData.surfaceTypes.includes(tipe) ? 'bg-blue-50 border-blue-300 text-blue-800 font-bold' : 'bg-white hover:bg-slate-50 text-slate-700 font-medium'}`}>
+                <input type="checkbox" checked={formData.surfaceTypes.includes(tipe)} onChange={() => handleSurfaceToggle(tipe)} className="rounded text-blue-600 w-4 h-4 cursor-pointer accent-blue-600" />
+                {tipe}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {/* 5. Keterangan */}
+        <div className="space-y-3">
+          <label className="block text-sm font-bold text-slate-700">5. Keterangan</label>
+          <textarea rows="3" placeholder="Tambahkan keterangan jika ada..." className="w-full p-3 border border-slate-300 rounded-xl text-[15px] shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})}></textarea>
+        </div>
+
+        {/* 6. Foto */}
+        <div className="space-y-3">
+          <label className="block text-sm font-bold text-slate-700">6. Foto Dokumentasi</label>
+          <div className="flex flex-wrap gap-3">
+            {(formData.photos || []).map((photo, i) => (
+              <div key={i} className="relative w-20 h-20 border rounded-xl overflow-hidden shadow-sm">
+                <img src={photo} alt={`Preview ${i}`} className="w-full h-full object-cover" />
+                <button type="button" onClick={() => removePhoto(i)} className="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white p-1 rounded-full shadow-md active:scale-95"><X size={12} /></button>
+              </div>
+            ))}
+            <label className="w-20 h-20 border-2 border-dashed border-blue-300 bg-blue-50 rounded-xl flex flex-col items-center justify-center text-blue-500 cursor-pointer hover:bg-blue-100 transition-colors active:scale-95">
+              <Camera size={24} />
+              <span className="text-[10px] mt-1 font-bold text-center leading-tight">Tambah<br/>Foto</span>
+              <input type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={handlePhotoUpload} />
+            </label>
+          </div>
+        </div>
+
+        {/* 7. Track GPS */}
+        <div className="space-y-3">
+          <label className="block text-sm font-bold text-slate-700">7. Rekam Jalur (Track GPS)</label>
+          <div className="bg-slate-800 text-white p-5 rounded-2xl shadow-inner text-center relative overflow-hidden">
+            <div className="text-3xl font-mono mb-1 font-bold">
+              {(distance / 1000).toFixed(2)} <span className="text-base text-slate-300 font-sans">KM</span>
             </div>
-            <p className="text-sm text-slate-400 font-medium">Jarak Terekam</p>
-            <div className="flex flex-col sm:flex-row gap-3 mt-5">
-              <button type="button" onClick={toggleTracking} disabled={isSimulating}
-                className={`flex-1 py-4 rounded-xl font-bold text-base transition-all disabled:opacity-50 active:scale-[0.98] shadow-lg ${isTracking && !isSimulating ? 'bg-red-500 hover:bg-red-600 animate-pulse shadow-red-500/30' : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/30'}`}>
-                {isTracking && !isSimulating ? '⏹ Hentikan Perekaman' : '⏺ Mulai Rekam Asli'}
-              </button>
-              <button type="button" onClick={toggleSimulation} disabled={isTracking && !isSimulating}
-                className={`flex-1 py-4 rounded-xl font-bold text-base transition-all disabled:opacity-50 active:scale-[0.98] shadow-lg ${isSimulating ? 'bg-red-500 hover:bg-red-600 animate-pulse shadow-red-500/30' : 'bg-blue-500 hover:bg-blue-600 shadow-blue-500/30'}`}>
-                {isSimulating ? '⏹ Hentikan Simulasi' : '🎮 Simulasi Track'}
+            <p className="text-xs text-slate-400 font-medium">Jarak Terekam</p>
+            <div className="mt-4">
+              <button type="button" onClick={toggleTracking}
+                className={`w-full py-4 rounded-xl font-bold text-base transition-all active:scale-[0.98] shadow-lg flex justify-center items-center gap-2 ${isTracking ? 'bg-red-500 hover:bg-red-600 animate-pulse' : 'bg-emerald-500 hover:bg-emerald-600'}`}>
+                {isTracking ? <><X size={20}/> Stop Perekaman</> : <><Activity size={20}/> Mulai Rekam Track</>}
               </button>
             </div>
             {path.length > 0 && leafletLoaded && (
-              <div className="h-40 w-full rounded-xl overflow-hidden border-2 border-slate-700 mt-5 shadow-inner">
+              <div className="h-32 w-full rounded-xl overflow-hidden border-2 border-slate-700 mt-4 shadow-inner">
                 <MiniMap path={path} />
               </div>
             )}
           </div>
-        )}
-
-        <div className="space-y-5">
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Nama Jalan / Ruas *</label>
-            <input required type="text" placeholder="Cth: Jl. Ahmad Yani" className="w-full p-3.5 border border-slate-300 rounded-xl text-[16px] shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              value={formData.roadName} onChange={e => setFormData({...formData, roadName: e.target.value})} disabled={isTracking} />
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Jenis Permukaan (Bisa Pilih Banyak)</label>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {['Aspal', 'Beton', 'Paving Block', 'Berbatuan', 'Tanah', 'Berlobang'].map(tipe => (
-                <label key={tipe} className={`flex items-center gap-3 text-sm border p-3 rounded-xl cursor-pointer transition-colors shadow-sm ${formData.surfaceTypes.includes(tipe) ? 'bg-blue-50 border-blue-300 text-blue-800 font-medium' : 'bg-white hover:bg-slate-50 text-slate-700'}`}>
-                  <input type="checkbox" checked={formData.surfaceTypes.includes(tipe)} onChange={() => handleSurfaceToggle(tipe)} disabled={isTracking} className="rounded text-blue-600 w-5 h-5 cursor-pointer accent-blue-600" />
-                  {tipe}
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Kondisi *</label>
-              <select className="w-full p-3.5 border border-slate-300 rounded-xl text-[16px] shadow-sm bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                value={formData.condition} onChange={e => setFormData({...formData, condition: e.target.value})} disabled={isTracking}>
-                <option>Baik</option><option>Sedang</option><option>Rusak Ringan</option><option>Rusak Berat</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Tahun *</label>
-              <input required type="number" min="2000" max="2100" className="w-full p-3.5 border border-slate-300 rounded-xl text-[16px] shadow-sm bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                value={formData.year} onChange={e => setFormData({...formData, year: e.target.value})} disabled={isTracking} />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Keterangan Tambahan</label>
-            <textarea rows="3" placeholder="Deskripsi opsional..." className="w-full p-3.5 border border-slate-300 rounded-xl text-[16px] shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} disabled={isTracking}></textarea>
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Tautan Video (G-Drive / YouTube)</label>
-            <input type="url" placeholder="https://..." className="w-full p-3.5 border border-slate-300 rounded-xl text-[16px] shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              value={formData.videoUrl} onChange={e => setFormData({...formData, videoUrl: e.target.value})} disabled={isTracking} />
-          </div>
-
-          {!isTracking && (
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Dokumentasi Foto</label>
-              <div className="flex flex-wrap gap-3 mb-2">
-                {(formData.photos || []).map((photo, i) => (
-                  <div key={i} className="relative w-20 h-20 border rounded-xl overflow-hidden shadow-sm">
-                    <img src={photo} alt={`Preview ${i}`} className="w-full h-full object-cover" />
-                    <button type="button" onClick={() => removePhoto(i)} className="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white p-1.5 rounded-full shadow-md active:scale-95"><X size={12} /></button>
-                  </div>
-                ))}
-                <label className="w-20 h-20 border-2 border-dashed border-blue-300 bg-blue-50 rounded-xl flex flex-col items-center justify-center text-blue-500 cursor-pointer hover:bg-blue-100 transition-colors active:scale-95">
-                  <Camera size={24} />
-                  <span className="text-[10px] mt-1 font-bold text-center leading-tight">Tambah<br/>Foto</span>
-                  <input type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={handlePhotoUpload} />
-                </label>
-              </div>
-            </div>
-          )}
         </div>
 
-        <div className="flex gap-3 pt-4 border-t border-slate-100">
-          <button disabled={isSaving || isTracking || (mappingType === 'track' && path.length < 2)} type="submit" 
+        <div className="flex gap-3 pt-6 border-t border-slate-200">
+          <button disabled={isSaving || isTracking} type="submit" 
             className="flex-1 bg-blue-600 text-white py-4 rounded-xl font-bold text-lg flex justify-center items-center gap-2 hover:bg-blue-700 disabled:opacity-50 active:scale-[0.98] transition-all shadow-lg shadow-blue-600/30">
-            <Save size={22} /> {isSaving ? 'Menyimpan...' : 'Simpan Data GPS'}
+            <Save size={22} /> {isSaving ? 'Menyimpan...' : 'Simpan Data'}
           </button>
-          {mappingType === 'track' && (
-            <button type="button" onClick={downloadGeoJSON} disabled={path.length < 2 || isTracking} className="bg-slate-200 text-slate-700 px-5 rounded-xl font-bold disabled:opacity-50 flex justify-center items-center active:scale-[0.98] transition-transform">
+          {path.length >= 2 && (
+            <button type="button" onClick={downloadGeoJSON} disabled={isTracking} className="bg-slate-200 text-slate-700 px-5 rounded-xl font-bold disabled:opacity-50 flex justify-center items-center active:scale-[0.98] transition-transform" title="Download GeoJSON">
               <Download size={22} />
             </button>
           )}
         </div>
 
-        {showPicker && mappingType === 'point' && (
+        {showPicker && (
           <MapPicker initialLat={formData.lat} initialLng={formData.lng} onSelect={(lat, lng) => setFormData({...formData, lat, lng, accuracy: 0})} onClose={() => setShowPicker(false)} />
         )}
       </form>
@@ -581,21 +533,21 @@ export default function App() {
                 <div style="grid-column: span 2;"><span style="color: #64748b; display: block; font-size: 0.75rem;">Permukaan:</span> <b style="color: #334155;">${road.surfaceTypes && road.surfaceTypes.length > 0 ? road.surfaceTypes.join(', ') : '-'}</b></div>
                 <div><span style="color: #64748b; display: block; font-size: 0.75rem;">Kondisi:</span> <b style="color: #334155;">${road.condition}</b></div>
                 <div><span style="color: #64748b; display: block; font-size: 0.75rem;">Tahun:</span> <b style="color: #334155;">${road.year || '-'}</b></div>
-                ${road.type === 'track' ? `<div style="grid-column: span 2;"><span style="color: #64748b; display: block; font-size: 0.75rem;">Panjang Jalur:</span> <b style="color: #334155;">${(road.distanceMeters / 1000).toFixed(2)} km</b></div>` : ''}
+                ${road.trackPath && road.trackPath.length > 0 ? `<div style="grid-column: span 2;"><span style="color: #64748b; display: block; font-size: 0.75rem;">Panjang Jalur:</span> <b style="color: #334155;">${(road.distanceMeters / 1000).toFixed(2)} km</b></div>` : ''}
               </div>
               ${road.description ? `<p style="font-size: 0.85rem; font-style: italic; background-color: #fefce8; padding: 0.5rem; border-left: 3px solid #facc15; margin-bottom: 0.75rem; border-radius: 0 0.25rem 0.25rem 0; color: #854d0e;">"${road.description}"</p>` : ''}
               <p style="font-size: 0.7rem; color: #94a3b8; text-align: right;">Disurvei: ${new Date(road.surveyDate).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year:'numeric'})}</p>
             </div>
           `;
 
-        if (road.type === 'point' && road.location) {
-          const marker = window.L.marker([road.location.lat, road.location.lng], { icon: icons[road.condition] || icons.default });
-          marker.bindPopup(popupContent, { maxWidth: 300 });
-          markersGroup.current.addLayer(marker);
-        } else if (road.type === 'track' && road.trackPath) {
+        if (road.trackPath && road.trackPath.length > 0) {
           const polyline = window.L.polyline(road.trackPath, { color: getPolylineColor(road.condition), weight: 6, opacity: 0.85 });
           polyline.bindPopup(popupContent, { maxWidth: 300 });
           markersGroup.current.addLayer(polyline);
+        } else if (road.location) {
+          const marker = window.L.marker([road.location.lat, road.location.lng], { icon: icons[road.condition] || icons.default });
+          marker.bindPopup(popupContent, { maxWidth: 300 });
+          markersGroup.current.addLayer(marker);
         }
       });
     }, [roadsData, filterCondition, filterYear, leafletLoaded]);
