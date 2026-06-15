@@ -315,15 +315,13 @@ export default function App() {
         surveyDate: new Date().toISOString()
       };
 
+      // Keduanya bisa disimpan bersamaan (titik dan track)
       if (path.length >= 2) {
-        basePayload.type = 'track';
         basePayload.trackPath = path;
         basePayload.distanceMeters = Math.round(distance);
-        if (formData.lat && formData.lng) {
-          basePayload.location = { lat: parseFloat(formData.lat), lng: parseFloat(formData.lng) };
-        }
-      } else {
-        basePayload.type = 'point';
+      }
+      
+      if (formData.lat && formData.lng) {
         basePayload.location = { lat: parseFloat(formData.lat), lng: parseFloat(formData.lng) };
       }
 
@@ -358,7 +356,7 @@ export default function App() {
 
         {/* 1. Titik Lokasi */}
         <div className="space-y-3">
-          <label className="block text-sm font-bold text-slate-700">1. Titik Lokasi</label>
+          <label className="block text-sm font-bold text-slate-700">1. Titik Lokasi (Bisa dikosongkan jika hanya merekam track)</label>
           <div className="flex flex-col sm:flex-row gap-3">
             <button type="button" onClick={getGPS} className="flex-1 bg-blue-100 text-blue-700 py-3 rounded-xl flex justify-center items-center gap-2 hover:bg-blue-200 active:scale-[0.98] transition-transform font-bold shadow-sm text-sm">
               <Navigation size={18} /> Deteksi Otomatis
@@ -408,7 +406,7 @@ export default function App() {
         {/* 5. Keterangan */}
         <div className="space-y-3">
           <label className="block text-sm font-bold text-slate-700">5. Keterangan</label>
-          <textarea rows="3" placeholder="Tambahkan keterangan jika ada..." className="w-full p-3 border border-slate-300 rounded-xl text-[15px] shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+          <textarea rows="3" placeholder="Tambahkan keterangan kondisi jalan / situasi..." className="w-full p-3 border border-slate-300 rounded-xl text-[15px] shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
             value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})}></textarea>
         </div>
 
@@ -432,7 +430,7 @@ export default function App() {
 
         {/* 7. Track GPS */}
         <div className="space-y-3">
-          <label className="block text-sm font-bold text-slate-700">7. Rekam Jalur (Track GPS)</label>
+          <label className="block text-sm font-bold text-slate-700">7. Rekam Jalur (Bisa dikosongkan jika hanya mengirim titik lokasi)</label>
           <div className="bg-slate-800 text-white p-5 rounded-2xl shadow-inner text-center relative overflow-hidden">
             <div className="text-3xl font-mono mb-1 font-bold">
               {(distance / 1000).toFixed(2)} <span className="text-base text-slate-300 font-sans">KM</span>
@@ -455,7 +453,7 @@ export default function App() {
         <div className="flex gap-3 pt-6 border-t border-slate-200">
           <button disabled={isSaving || isTracking} type="submit" 
             className="flex-1 bg-blue-600 text-white py-4 rounded-xl font-bold text-lg flex justify-center items-center gap-2 hover:bg-blue-700 disabled:opacity-50 active:scale-[0.98] transition-all shadow-lg shadow-blue-600/30">
-            <Save size={22} /> {isSaving ? 'Menyimpan...' : 'Simpan Data'}
+            <Save size={22} /> {isSaving ? 'Menyimpan...' : 'Simpan Data Peta'}
           </button>
           {path.length >= 2 && (
             <button type="button" onClick={downloadGeoJSON} disabled={isTracking} className="bg-slate-200 text-slate-700 px-5 rounded-xl font-bold disabled:opacity-50 flex justify-center items-center active:scale-[0.98] transition-transform" title="Download GeoJSON">
@@ -479,6 +477,19 @@ export default function App() {
     const center = [-0.485, 117.155];
 
     const uniqueYears = Array.from(new Set(roadsData.map(r => r.year).filter(Boolean))).sort((a, b) => b - a);
+
+    // Filter data roads untuk ditampilkan dan dihitung legendanya
+    const filteredRoads = roadsData.filter(road => {
+      const matchCondition = filterCondition === 'Semua' ? true : road.condition === filterCondition;
+      const matchYear = filterYear === 'Semua' ? true : String(road.year) === String(filterYear);
+      return matchCondition && matchYear;
+    });
+
+    // Hitung jumlah statistik untuk Legenda berdasarkan data yang sedang tampil (difilter)
+    const countBaik = filteredRoads.filter(r => r.condition === 'Baik').length;
+    const countSedang = filteredRoads.filter(r => r.condition === 'Sedang').length;
+    const countRusakRingan = filteredRoads.filter(r => r.condition === 'Rusak Ringan').length;
+    const countRusakBerat = filteredRoads.filter(r => r.condition === 'Rusak Berat').length;
 
     useEffect(() => {
       if (!window.L || !mapRef.current) return;
@@ -511,12 +522,6 @@ export default function App() {
 
       if (markersGroup.current) markersGroup.current.clearLayers();
 
-      const filteredRoads = roadsData.filter(road => {
-        const matchCondition = filterCondition === 'Semua' ? true : road.condition === filterCondition;
-        const matchYear = filterYear === 'Semua' ? true : String(road.year) === String(filterYear);
-        return matchCondition && matchYear;
-      });
-
       const createCustomIcon = (color) => window.L.divIcon({ className: 'custom-leaflet-icon', html: `<div style="background-color: ${color}; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.4);"></div>`, iconSize: [24, 24], iconAnchor: [12, 12] });
       const icons = { 'Baik': createCustomIcon('#22c55e'), 'Sedang': createCustomIcon('#eab308'), 'Rusak Ringan': createCustomIcon('#f97316'), 'Rusak Berat': createCustomIcon('#ef4444'), 'default': createCustomIcon('#3b82f6') };
       const getPolylineColor = (condition) => { switch(condition) { case 'Baik': return '#22c55e'; case 'Sedang': return '#eab308'; case 'Rusak Ringan': return '#f97316'; case 'Rusak Berat': return '#ef4444'; default: return '#3b82f6'; } };
@@ -525,6 +530,7 @@ export default function App() {
         const photoHTML = road.photos && road.photos.length > 0 ? `<div style="display: flex; gap: 8px; overflow-x: auto; margin-bottom: 0.75rem; padding-bottom: 4px;">${road.photos.map(p => `<img src="${p}" style="height: 80px; min-width: 80px; border-radius: 8px; object-fit: cover; border: 1px solid #e5e7eb; box-shadow: 0 1px 2px rgba(0,0,0,0.05);" />`).join('')}</div>` : '';
         const videoHTML = road.videoUrl ? `<a href="${road.videoUrl}" target="_blank" style="display: flex; align-items: center; gap: 6px; font-size: 0.85rem; font-weight: bold; color: #fff; background-color: #ef4444; padding: 6px 12px; border-radius: 6px; text-decoration: none; margin-bottom: 0.75rem; width: fit-content; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3);">▶️ Tonton Video</a>` : '';
 
+        // Template Pop Up Peta Lengkap
         const popupContent = `
             <div style="min-width: 220px; font-family: sans-serif;">
               <h3 style="font-weight: 800; font-size: 1.25rem; margin-bottom: 0.75rem; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 4px;">${road.roadName}</h3>
@@ -540,23 +546,26 @@ export default function App() {
             </div>
           `;
 
+        // Keduanya bisa di-render secara bersamaan jika data keduanya ada (titik & garis)
         if (road.trackPath && road.trackPath.length > 0) {
           const polyline = window.L.polyline(road.trackPath, { color: getPolylineColor(road.condition), weight: 6, opacity: 0.85 });
           polyline.bindPopup(popupContent, { maxWidth: 300 });
           markersGroup.current.addLayer(polyline);
-        } else if (road.location) {
+        }
+        
+        if (road.location && road.location.lat && road.location.lng) {
           const marker = window.L.marker([road.location.lat, road.location.lng], { icon: icons[road.condition] || icons.default });
           marker.bindPopup(popupContent, { maxWidth: 300 });
           markersGroup.current.addLayer(marker);
         }
       });
-    }, [roadsData, filterCondition, filterYear, leafletLoaded]);
+    }, [filteredRoads, leafletLoaded]);
 
     if (!leafletLoaded) return <div className="absolute inset-0 flex items-center justify-center bg-slate-50 text-slate-400 font-medium">Memuat Komponen Peta GIS...</div>;
 
     return (
       <div className="absolute inset-0 w-full h-full">
-        {/* Floating Filter Panel - Lebih compact untuk HP */}
+        {/* Floating Filter Panel */}
         <div className="absolute top-3 right-3 z-[1000] bg-white/95 backdrop-blur rounded-xl shadow-lg p-3 flex flex-col gap-3 min-w-[140px] border border-slate-100">
           <div className="flex flex-col gap-1">
             <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest">Kondisi Jalan</span>
@@ -573,14 +582,30 @@ export default function App() {
           </div>
         </div>
 
-        {/* Legend - Dipindah ke kiri bawah sedikit ke atas menghindari atribusi leaflet */}
-        <div className="absolute bottom-6 left-3 z-[1000] bg-white/95 backdrop-blur p-3 rounded-xl shadow-lg text-xs border border-slate-100 font-medium text-slate-700">
-          <div className="font-extrabold mb-2 text-slate-800 border-b pb-1">Legenda Peta</div>
-          <div className="flex items-center gap-2.5"><div className="w-3.5 h-3.5 rounded-full bg-[#22c55e] shadow-sm border border-white"></div> Baik</div>
-          <div className="flex items-center gap-2.5 mt-1.5"><div className="w-3.5 h-3.5 rounded-full bg-[#eab308] shadow-sm border border-white"></div> Sedang</div>
-          <div className="flex items-center gap-2.5 mt-1.5"><div className="w-3.5 h-3.5 rounded-full bg-[#f97316] shadow-sm border border-white"></div> Rusak Ringan</div>
-          <div className="flex items-center gap-2.5 mt-1.5"><div className="w-3.5 h-3.5 rounded-full bg-[#ef4444] shadow-sm border border-white"></div> Rusak Berat</div>
+        {/* Legend Dinamis dengan Jumlah Angka */}
+        <div className="absolute bottom-6 left-3 z-[1000] bg-white/95 backdrop-blur p-3 rounded-xl shadow-lg text-xs border border-slate-100 font-medium text-slate-700 min-w-[160px]">
+          <div className="font-extrabold mb-3 text-slate-800 border-b pb-1.5 flex justify-between">
+            <span>Legenda & Statistik</span>
+            <span className="bg-slate-200 text-[10px] px-1.5 py-0.5 rounded-full">{filteredRoads.length} Total</span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5"><div className="w-3.5 h-3.5 rounded-full bg-[#22c55e] shadow-sm border border-white"></div> Baik</div>
+            <span className="font-bold bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">{countBaik}</span>
+          </div>
+          <div className="flex items-center justify-between gap-3 mt-2.5">
+            <div className="flex items-center gap-2.5"><div className="w-3.5 h-3.5 rounded-full bg-[#eab308] shadow-sm border border-white"></div> Sedang</div>
+            <span className="font-bold bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">{countSedang}</span>
+          </div>
+          <div className="flex items-center justify-between gap-3 mt-2.5">
+            <div className="flex items-center gap-2.5"><div className="w-3.5 h-3.5 rounded-full bg-[#f97316] shadow-sm border border-white"></div> Rusak Ringan</div>
+            <span className="font-bold bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">{countRusakRingan}</span>
+          </div>
+          <div className="flex items-center justify-between gap-3 mt-2.5">
+            <div className="flex items-center gap-2.5"><div className="w-3.5 h-3.5 rounded-full bg-[#ef4444] shadow-sm border border-white"></div> Rusak Berat</div>
+            <span className="font-bold bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">{countRusakBerat}</span>
+          </div>
         </div>
+        
         <div ref={mapRef} className="w-full h-full z-0"></div>
       </div>
     );
