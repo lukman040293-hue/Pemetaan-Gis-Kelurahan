@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* CSS tambahan agar Leaflet berjalan sempurna di HP */
+body,
+html {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overscroll-behavior-y: none;
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
