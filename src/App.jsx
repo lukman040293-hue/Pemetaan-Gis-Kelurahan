@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Map as MapIcon, PlusSquare, Navigation, Save, 
-  Wifi, WifiOff, Camera, MapPin, Activity, X, Download, Database
+  Wifi, WifiOff, Camera, MapPin, Activity, X, Download, Database, Loader
 } from 'lucide-react';
 
 // --- SUPABASE INITIALIZATION ---
@@ -29,35 +29,6 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
             Math.sin(Δλ/2) * Math.sin(Δλ/2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   return R * c;
-};
-
-// --- DATA BATAS WILAYAH (GEOJSON) ---
-const batasKelurahanGeoJSON = {
-  "type": "FeatureCollection",
-  "features": [
-    {
-      "type": "Feature",
-      "properties": {
-        "nama": "Pelita",
-        "sumber": "Siadwil & Monografi Kelurahan",
-        "penduduk": "14.077 Jiwa",
-        "luas": "892 Km²"
-      },
-      "geometry": {
-        "type": "Polygon",
-        "coordinates": [
-          [
-            [117.1512, -0.4770], [117.1538, -0.4772], [117.1565, -0.4778], [117.1590, -0.4795],
-            [117.1615, -0.4820], [117.1625, -0.4845], [117.1630, -0.4865], [117.1625, -0.4895],
-            [117.1610, -0.4908], [117.1590, -0.4915], [117.1570, -0.4925], [117.1555, -0.4938],
-            [117.1540, -0.4945], [117.1525, -0.4950], [117.1510, -0.4953], [117.1495, -0.4948],
-            [117.1482, -0.4930], [117.1475, -0.4915], [117.1470, -0.4900], [117.1478, -0.4875],
-            [117.1488, -0.4845], [117.1498, -0.4815], [117.1508, -0.4785], [117.1512, -0.4770]
-          ]
-        ]
-      }
-    }
-  ]
 };
 
 // --- MAIN APPLICATION COMPONENT ---
@@ -122,16 +93,15 @@ export default function App() {
         mapInstance.current = window.L.map(mapRef.current, { zoomControl: false }).setView([-0.485, 117.155], 14);
         window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapInstance.current);
         window.L.control.zoom({ position: 'bottomright' }).addTo(mapInstance.current);
-        const boundaryLayer = window.L.geoJSON(batasKelurahanGeoJSON, { style: { color: "#0ea5e9", weight: 2, fillOpacity: 0.05 }, interactive: false }).addTo(mapInstance.current);
-        const boundsCenter = boundaryLayer.getBounds().getCenter();
-        const markerPos = (initialLat && initialLng) ? [initialLat, initialLng] : boundsCenter;
+        
+        const defaultCenter = [-0.485, 117.155];
+        const markerPos = (initialLat && initialLng) ? [initialLat, initialLng] : defaultCenter;
         markerRef.current = window.L.marker(markerPos, { draggable: true }).addTo(mapInstance.current);
 
         setTimeout(() => {
           if (mapInstance.current) {
             mapInstance.current.invalidateSize();
-            if (!initialLat || !initialLng) mapInstance.current.fitBounds(boundaryLayer.getBounds(), { padding: [20, 20] });
-            else mapInstance.current.setView(markerPos, 17);
+            mapInstance.current.setView(markerPos, 16);
           }
         }, 250);
 
@@ -185,19 +155,23 @@ export default function App() {
         polylineRef.current = window.L.polyline(path, { color: '#3b82f6', weight: 5 }).addTo(mapInstance.current);
       }
 
-      // 2. Gambar Titik Merah (Marker) di posisi terakhir agar langsung terlihat saat merekam
+      // 2. Gambar Titik Merah (Marker) dengan jelas di posisi terakhir
       if (markerRef.current) mapInstance.current.removeLayer(markerRef.current);
       markerRef.current = window.L.circleMarker(lastPoint, { 
-        radius: 6, color: '#ffffff', weight: 2, fillOpacity: 1, fillColor: '#ef4444' 
+        radius: 8, color: '#ffffff', weight: 3, fillOpacity: 1, fillColor: '#ef4444' 
       }).addTo(mapInstance.current);
 
       // 3. Atur pandangan peta
       if (isTracking) {
-        // Jika sedang merekam, kamera selalu mengikuti titik terakhir
+        // Saat tracking: selalu di tengah titik terakhir
         mapInstance.current.setView(lastPoint, 17);
-      } else if (path.length > 1 && polylineRef.current) {
-        // Jika sudah STOP merekam, sesuaikan kamera (zoom out) agar seluruh garis terlihat
-        mapInstance.current.fitBounds(polylineRef.current.getBounds(), { padding: [15, 15] });
+      } else {
+        // Saat STOP: Auto-Zoom untuk melihat seluruh jalur
+        if (path.length > 1 && polylineRef.current) {
+          mapInstance.current.fitBounds(polylineRef.current.getBounds(), { padding: [20, 20] });
+        } else {
+          mapInstance.current.setView(lastPoint, 16);
+        }
       }
 
     }, [path, isTracking]);
@@ -273,47 +247,65 @@ export default function App() {
       );
     };
 
+    // --- LOGIKA TRACKING BARU ---
     const toggleTracking = () => {
       if (isTracking) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
+        // Hentikan Perekaman
+        if (watchIdRef.current) navigator.geolocation.clearWatch(watchIdRef.current);
         setIsTracking(false); 
-        showToast("Perekaman dihentikan", "info");
+        showToast("Perekaman dihentikan, Auto-Zoom diproses...", "info");
       } else {
+        // Mulai Perekaman
         if (!navigator.geolocation) return showToast("GPS tidak didukung", "error");
-        setPath([]); setDistance(0); setIsTracking(true); 
-        showToast("Mulai merekam jalur...", "success");
+        
+        setPath([]); 
+        setDistance(0); 
+        setIsTracking(true); 
+        
+        // 1. Dapatkan posisi pertama secara instan agar Map & Titik Merah langsung muncul
+        navigator.geolocation.getCurrentPosition(
+          (startPos) => {
+            const initialPoint = [startPos.coords.latitude, startPos.coords.longitude];
+            setPath([initialPoint]); // Set titik 1
+            showToast("Titik awal didapat. Memantau pergerakan...", "success");
 
-        watchIdRef.current = navigator.geolocation.watchPosition(
-          (pos) => {
-            const { latitude, longitude, accuracy } = pos.coords;
-            // Toleransi akurasi diperlebar (100) agar saat dites rekaman GPS lebih mudah tertangkap
-            if (accuracy > 100) return; 
-            
-            setPath(prevPath => {
-              const newPoint = [latitude, longitude];
-              if (prevPath.length > 0) {
-                const lastPoint = prevPath[prevPath.length - 1];
-                const dist = calculateDistance(lastPoint[0], lastPoint[1], latitude, longitude);
-                // Jarak minimal pergerakan diperkecil jadi 1 meter agar lebih responsif
-                if (dist > 1) { 
-                  setDistance(d => d + dist); 
-                  return [...prevPath, newPoint]; 
-                }
-                return prevPath;
-              }
-              // Catat titik pertama langsung
-              return [newPoint];
-            });
+            // 2. Mulai pantau pergerakan dengan toleransi ringan
+            watchIdRef.current = navigator.geolocation.watchPosition(
+              (pos) => {
+                const { latitude, longitude, accuracy } = pos.coords;
+                // Toleransi akurasi diperlebar (100)
+                if (accuracy > 100) return; 
+                
+                setPath(prevPath => {
+                  const newPoint = [latitude, longitude];
+                  if (prevPath.length > 0) {
+                    const lastPoint = prevPath[prevPath.length - 1];
+                    const dist = calculateDistance(lastPoint[0], lastPoint[1], latitude, longitude);
+                    
+                    // Jarak minimal pergerakan diperkecil jadi 1 meter agar responsif
+                    if (dist > 1) { 
+                      setDistance(d => d + dist); 
+                      return [...prevPath, newPoint]; 
+                    }
+                    return prevPath;
+                  }
+                  return [newPoint];
+                });
+              },
+              (err) => {
+                 if (err.message.includes("permissions policy") || err.code === 1) {
+                    showToast("Akses GPS diblokir oleh browser.", "error");
+                    setIsTracking(false);
+                 }
+              },
+              { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+            );
           },
           (err) => {
-             setIsTracking(false);
-             if (err.message.includes("permissions policy") || err.code === 1) {
-                showToast("Akses GPS diblokir oleh browser.", "error");
-             } else {
-                showToast(`Error GPS: ${err.message}`, "error");
-             }
+            setIsTracking(false);
+            showToast("Gagal mendapat titik awal: " + err.message, "error");
           },
-          { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+          { enableHighAccuracy: true, timeout: 10000 }
         );
       }
     };
@@ -475,26 +467,36 @@ export default function App() {
               </button>
             </div>
 
-            {/* Indikator Status Perekaman */}
+            {/* Indikator Status Perekaman Diperjelas */}
             {isTracking && path.length === 0 && (
-              <div className="mt-4 text-sm text-yellow-300 animate-pulse flex justify-center items-center gap-2 font-medium">
-                <Activity size={16}/> Mencari Sinyal GPS...
+              <div className="mt-4 text-sm text-yellow-300 flex justify-center items-center gap-2 font-medium bg-slate-700 p-2 rounded-lg border border-slate-600">
+                <Loader size={16} className="animate-spin"/> Menunggu Sinyal GPS...
               </div>
             )}
-            {isTracking && path.length === 1 && (
-              <div className="mt-4 text-sm text-green-300 flex justify-center items-center gap-2 font-medium">
-                <MapPin size={16}/> Titik awal didapat. Silakan mulai bergerak.
+            {isTracking && path.length > 0 && (
+              <div className="mt-4 text-sm text-green-300 flex justify-center items-center gap-2 font-medium bg-slate-700 p-2 rounded-lg border border-slate-600 shadow-inner">
+                <MapPin size={16}/> Titik GPS Terekam: <span className="font-bold text-white bg-green-600 px-2 rounded-md">{path.length}</span>
               </div>
             )}
 
-            {path.length > 0 && leafletLoaded && (
-              <div className="h-40 w-full rounded-xl overflow-hidden border-2 border-slate-700 mt-4 shadow-inner relative">
-                {isTracking && (
-                  <div className="absolute top-2 left-2 z-[1000] bg-red-600 text-white text-[10px] px-2 py-1 rounded shadow-md animate-pulse font-black tracking-widest">
-                    REC
+            {/* Area Peta Mini Akan Tampil Begitu "Mulai Rekam" Diklik */}
+            {(path.length > 0 || isTracking) && leafletLoaded && (
+              <div className="h-48 w-full rounded-xl overflow-hidden border-2 border-slate-600 mt-4 shadow-inner relative bg-slate-700 flex items-center justify-center">
+                {isTracking && path.length === 0 ? (
+                  <div className="text-slate-400 text-sm animate-pulse flex flex-col items-center gap-2">
+                    <Navigation size={24} className="animate-bounce" />
+                    Memuat Peta...
                   </div>
+                ) : (
+                  <>
+                    {isTracking && (
+                      <div className="absolute top-2 left-2 z-[1000] bg-red-600 text-white text-[10px] px-2 py-1 rounded shadow-md animate-pulse font-black tracking-widest flex items-center gap-1.5">
+                        <div className="w-2 h-2 bg-white rounded-full"></div> REC
+                      </div>
+                    )}
+                    <MiniMap path={path} isTracking={isTracking} />
+                  </>
                 )}
-                <MiniMap path={path} isTracking={isTracking} />
               </div>
             )}
           </div>
@@ -523,7 +525,7 @@ export default function App() {
     const [filterCondition, setFilterCondition] = useState('Semua');
     const [filterYear, setFilterYear] = useState('Semua');
     const mapRef = useRef(null); const mapInstance = useRef(null);
-    const markersGroup = useRef(null); const boundaryLayer = useRef(null);
+    const markersGroup = useRef(null);
     const center = [-0.485, 117.155];
 
     const uniqueYears = Array.from(new Set(roadsData.map(r => r.year).filter(Boolean))).sort((a, b) => b - a);
@@ -553,17 +555,11 @@ export default function App() {
         // Pindahkan kontrol zoom ke kiri atas agar tidak tertutup jari/legenda di HP
         window.L.control.zoom({ position: 'topleft' }).addTo(mapInstance.current);
 
-        boundaryLayer.current = window.L.geoJSON(batasKelurahanGeoJSON, {
-          style: function () { return { color: "#0ea5e9", weight: 3, opacity: 1, fillOpacity: 0.05, fillColor: "#0ea5e9" }; },
-          interactive: false
-        });
-
-        boundaryLayer.current.addTo(mapInstance.current);
-        window.L.control.layers({ "Street Map (OSM)": osm, "Citra Satelit (Esri)": esri }, { "Batas Wilayah": boundaryLayer.current }).addTo(mapInstance.current);
+        window.L.control.layers({ "Street Map (OSM)": osm, "Citra Satelit (Esri)": esri }).addTo(mapInstance.current);
 
         setTimeout(() => {
-          if (mapInstance.current && boundaryLayer.current) {
-            mapInstance.current.invalidateSize(); mapInstance.current.fitBounds(boundaryLayer.current.getBounds(), { padding: [10, 10] });
+          if (mapInstance.current) {
+            mapInstance.current.invalidateSize();
           }
         }, 250);
 
