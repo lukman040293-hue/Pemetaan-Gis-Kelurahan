@@ -8,14 +8,14 @@ import {
 // PENTING: Saat Anda menyalin kode ini ke project Vite Anda di komputer, 
 // silakan HAPUS tanda komentar (//) pada 4 baris kode di bawah ini:
 
-import { createClient } from '@supabase/supabase-js';
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
+// import { createClient } from '@supabase/supabase-js';
+// const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+// const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+// const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
 // Untuk keperluan preview di halaman ini agar tidak terjadi error kompilasi, 
 // kita tetapkan supabase sebagai null (KODE INI HARUS DIKOMENTARI ATAU DIHAPUS DI STACKBLITZ):
-// const supabase = null;
+const supabase = null;
 
 // --- HELPER FUNCTIONS ---
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -62,31 +62,11 @@ const batasKelurahanGeoJSON = {
 
 // --- MAIN APPLICATION COMPONENT ---
 export default function App() {
-  // Jika Supabase belum dikonfigurasi (seperti di layar preview ini)
-  if (!supabase) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 p-6 text-center">
-        <Database size={64} className="text-emerald-500 mb-4" />
-        <h1 className="text-2xl font-bold text-slate-800 mb-2">Siap Terhubung ke Supabase!</h1>
-        <p className="text-slate-600 mb-6 max-w-md">
-          Aplikasi ini telah diperbarui untuk menggunakan Supabase. Namun, kredensial Anda belum ditemukan.
-        </p>
-        <div className="bg-slate-800 text-left p-4 rounded-lg text-emerald-400 font-mono text-sm overflow-x-auto w-full max-w-lg shadow-lg">
-          <p className="text-slate-400 mb-2"># Buat file <span className="text-white">.env</span> di project lokal Anda dan isi dengan:</p>
-          <p>VITE_SUPABASE_URL=https://xyzcompany.supabase.co</p>
-          <p>VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5c...</p>
-        </div>
-      </div>
-    );
-  }
-
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [activeTab, setActiveTab] = useState('map'); 
   const [roadsData, setRoadsData] = useState([]);
   const [toast, setToast] = useState({ show: false, message: '', type: 'info' });
   const [leafletLoaded, setLeafletLoaded] = useState(false);
 
-  // Load Leaflet
   useEffect(() => {
     if (window.L) {
       setLeafletLoaded(true);
@@ -96,15 +76,14 @@ export default function App() {
     document.head.appendChild(link);
     const script = document.createElement('script'); script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
     script.onload = () => setLeafletLoaded(true); document.head.appendChild(script);
-    
-    const handleOnline = () => setIsOnline(true); const handleOffline = () => setIsOnline(false);
-    window.addEventListener('online', handleOnline); window.addEventListener('offline', handleOffline);
-    return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
   }, []);
 
-  // Fetch data dari Supabase secara Realtime
   useEffect(() => {
     const fetchRoads = async () => {
+      if (!supabase) {
+        setRoadsData([]);
+        return;
+      }
       const { data, error } = await supabase.from('roads').select('*').order('created_at', { ascending: false });
       if (error) {
         console.error("Error fetching data:", error);
@@ -115,16 +94,16 @@ export default function App() {
 
     fetchRoads();
 
-    // Subscribe untuk update realtime dari Supabase
+    if (!supabase) return;
     const subscription = supabase
       .channel('public:roads')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'roads' }, (payload) => {
-        fetchRoads(); // Ambil data ulang jika ada perubahan
+        fetchRoads(); 
       })
       .subscribe();
 
     return () => {
-      supabase.removeChannel(subscription);
+      if (supabase) supabase.removeChannel(subscription);
     };
   }, []);
 
@@ -167,41 +146,40 @@ export default function App() {
 
     return (
       <div className="fixed inset-0 z-[9999] bg-white flex flex-col">
-        <div className="p-4 bg-slate-900 text-white flex justify-between items-center shadow-md">
-          <h3 className="font-bold">Pilih Titik Lokasi</h3>
-          <button type="button" onClick={onClose} className="p-1 hover:bg-slate-700 rounded"><X size={24}/></button>
+        <div className="p-4 bg-slate-900 text-white flex justify-between items-center shadow-md pb-safe-top">
+          <h3 className="font-bold text-lg">Pilih Titik Lokasi</h3>
+          <button type="button" onClick={onClose} className="p-2 hover:bg-slate-700 rounded-full active:scale-95 transition-transform"><X size={24}/></button>
         </div>
-        <div className="bg-blue-50 p-2 text-xs text-blue-800 text-center border-b border-blue-100">
-          Klik area peta untuk menentukan letak koordinat (Otomatis kembali ke form).
+        <div className="bg-blue-50 p-3 text-sm text-blue-800 text-center border-b border-blue-100 font-medium shadow-inner">
+          Sentuh area peta untuk memindahkan titik (Pin).
         </div>
         <div className="flex-1 relative"><div ref={mapRef} style={{ height: '100%', width: '100%' }}></div></div>
-        <div className="p-4 bg-white border-t shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-          <button type="button" onClick={() => { if(markerRef.current){ const pos = markerRef.current.getLatLng(); onSelect(pos.lat.toFixed(6), pos.lng.toFixed(6)); } onClose(); }} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold flex justify-center items-center gap-2">
-            <MapPin size={18} /> Gunakan Koordinat Ini
+        <div className="p-4 bg-white border-t shadow-[0_-4px_10px_rgba(0,0,0,0.1)] pb-safe">
+          <button type="button" onClick={() => { if(markerRef.current){ const pos = markerRef.current.getLatLng(); onSelect(pos.lat.toFixed(6), pos.lng.toFixed(6)); } onClose(); }} 
+            className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold flex justify-center items-center gap-2 text-lg active:scale-[0.98] transition-transform shadow-lg shadow-blue-200">
+            <MapPin size={22} /> Gunakan Titik Ini
           </button>
         </div>
       </div>
     );
   };
 
-  // --- KOMPONEN MINI MAP UNTUK TRACKING ---
   const MiniMap = ({ path }) => {
     const mapRef = useRef(null); const mapInstance = useRef(null); const polylineRef = useRef(null);
     useEffect(() => {
       if (!window.L || !mapRef.current) return;
       const lastPoint = path[path.length - 1];
       if (!mapInstance.current) {
-        mapInstance.current = window.L.map(mapRef.current, { zoomControl: false }).setView(lastPoint, 16);
+        mapInstance.current = window.L.map(mapRef.current, { zoomControl: false, dragging: false, scrollWheelZoom: false }).setView(lastPoint, 16);
         window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapInstance.current);
       } else mapInstance.current.setView(lastPoint, 16);
 
       if (polylineRef.current) mapInstance.current.removeLayer(polylineRef.current);
-      polylineRef.current = window.L.polyline(path, { color: 'blue', weight: 5 }).addTo(mapInstance.current);
+      polylineRef.current = window.L.polyline(path, { color: '#3b82f6', weight: 5 }).addTo(mapInstance.current);
     }, [path]);
-    return <div ref={mapRef} style={{ height: '100%', width: '100%', zIndex: 1 }} />;
+    return <div ref={mapRef} className="h-full w-full rounded-xl z-0 pointer-events-none" />;
   };
 
-  // --- TAB: UNIFIED INPUT FORM (TITIK & TRACK) ---
   const UnifiedForm = () => {
     const [mappingType, setMappingType] = useState('point');
     const [showPicker, setShowPicker] = useState(false);
@@ -254,7 +232,7 @@ export default function App() {
     };
 
     const getGPS = () => {
-      if (!navigator.geolocation) return showToast("GPS tidak didukung", "error");
+      if (!navigator.geolocation) return showToast("GPS tidak didukung oleh browser ini", "error");
       showToast("Mengambil lokasi...", "info");
       navigator.geolocation.getCurrentPosition(
         (pos) => {
@@ -263,7 +241,7 @@ export default function App() {
         },
         (err) => {
           if (err.message.includes("permissions policy") || err.code === 1) {
-            showToast("Akses GPS diblokir di preview ini. Gunakan 'Pilih di Peta'.", "error");
+            showToast("Akses GPS diblokir. Silakan gunakan 'Pilih di Peta'.", "error");
           } else {
             showToast(`Gagal GPS: ${err.message}`, "error");
           }
@@ -325,7 +303,7 @@ export default function App() {
           (err) => {
              setIsTracking(false);
              if (err.message.includes("permissions policy") || err.code === 1) {
-                showToast("Akses GPS asli diblokir browser. Gunakan tombol 'Simulasi Track' di sebelahnya.", "error");
+                showToast("GPS diblokir. Gunakan tombol 'Simulasi Track' di sebelahnya.", "error");
              } else {
                 showToast(`Error GPS: ${err.message}`, "error");
              }
@@ -349,10 +327,14 @@ export default function App() {
       a.href = url; a.download = `track-${formData.roadName || 'jalan'}.geojson`; a.click();
     };
 
-    // --- Insert ke Supabase ---
     const handleSubmit = async (e) => {
       e.preventDefault();
       if (!formData.roadName) return showToast("Nama jalan wajib diisi", "error");
+
+      if (!supabase) {
+        showToast("Koneksi database belum aktif. Harap hubungkan ke Supabase.", "error");
+        return;
+      }
 
       const basePayload = {
         roadName: formData.roadName,
@@ -379,7 +361,6 @@ export default function App() {
       setIsSaving(true);
       try {
         const { error } = await supabase.from('roads').insert([basePayload]);
-        
         if (error) throw error;
 
         showToast("Data berhasil disimpan ke Supabase!", "success");
@@ -394,124 +375,124 @@ export default function App() {
     };
 
     return (
-      <form onSubmit={handleSubmit} className="p-4 space-y-4 max-w-2xl mx-auto pb-24">
-        <div className="flex bg-slate-100 p-1 rounded-lg mb-4">
+      <form onSubmit={handleSubmit} className="px-4 py-6 space-y-6 max-w-2xl mx-auto pb-32">
+        <div className="flex bg-slate-100 p-1.5 rounded-xl mb-4 shadow-inner">
           <button type="button" onClick={() => setMappingType('point')} disabled={isTracking}
-            className={`flex flex-1 justify-center items-center gap-2 py-2 text-sm font-bold rounded-md transition-all ${mappingType === 'point' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}>
-            <MapPin size={16} /> Titik (Point)
+            className={`flex flex-1 justify-center items-center gap-2 py-3 text-sm font-bold rounded-lg transition-all ${mappingType === 'point' ? 'bg-white shadow text-blue-600 scale-[1.02]' : 'text-slate-500 hover:text-slate-700'}`}>
+            <MapPin size={18} /> Titik (Point)
           </button>
           <button type="button" onClick={() => setMappingType('track')} disabled={isTracking}
-            className={`flex flex-1 justify-center items-center gap-2 py-2 text-sm font-bold rounded-md transition-all ${mappingType === 'track' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}>
-            <Activity size={16} /> Jalur (Track)
+            className={`flex flex-1 justify-center items-center gap-2 py-3 text-sm font-bold rounded-lg transition-all ${mappingType === 'track' ? 'bg-white shadow text-blue-600 scale-[1.02]' : 'text-slate-500 hover:text-slate-700'}`}>
+            <Activity size={18} /> Jalur (Track)
           </button>
         </div>
 
-        <h2 className="text-xl font-bold border-b pb-2">
-          Input Data {mappingType === 'point' ? 'Titik Lokasi' : 'Jalur Jalan'}
+        <h2 className="text-2xl font-bold border-b border-slate-200 pb-3 text-slate-800">
+          Form Data {mappingType === 'point' ? 'Titik Lokasi' : 'Jalur Jalan'}
         </h2>
 
         {mappingType === 'point' ? (
-          <div className="bg-blue-50/50 p-3 rounded border border-blue-100">
-            <label className="block text-sm font-medium mb-1">Koordinat GPS *</label>
-            <div className="flex gap-2 mb-2">
-              <button type="button" onClick={getGPS} className="flex-1 bg-blue-100 text-blue-700 py-2 rounded flex justify-center items-center gap-2 hover:bg-blue-200 text-sm font-medium">
-                <Navigation size={16} /> GPS Otomatis
+          <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100 shadow-sm">
+            <label className="block text-sm font-semibold text-slate-700 mb-3">Koordinat GPS *</label>
+            <div className="flex flex-col sm:flex-row gap-3 mb-3">
+              <button type="button" onClick={getGPS} className="flex-1 bg-blue-100 text-blue-700 py-3.5 rounded-xl flex justify-center items-center gap-2 hover:bg-blue-200 active:scale-[0.98] transition-transform font-bold shadow-sm">
+                <Navigation size={18} /> Deteksi Otomatis
               </button>
-              <button type="button" onClick={() => setShowPicker(true)} className="flex-1 bg-slate-100 text-slate-700 py-2 rounded flex justify-center items-center gap-2 hover:bg-slate-200 border border-slate-200 text-sm font-medium">
-                <MapIcon size={16} /> Pilih di Peta
+              <button type="button" onClick={() => setShowPicker(true)} className="flex-1 bg-white text-slate-700 py-3.5 rounded-xl flex justify-center items-center gap-2 hover:bg-slate-50 border border-slate-200 active:scale-[0.98] transition-transform font-bold shadow-sm">
+                <MapIcon size={18} /> Pilih di Peta
               </button>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <input required type="number" step="any" placeholder="Latitude" className="w-full p-2 border rounded text-sm bg-white"
+            <div className="grid grid-cols-2 gap-3">
+              <input required type="number" step="any" placeholder="Latitude" className="w-full p-3 border border-slate-300 rounded-xl text-[16px] bg-white shadow-inner focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 value={formData.lat} onChange={e => setFormData({...formData, lat: e.target.value})} />
-              <input required type="number" step="any" placeholder="Longitude" className="w-full p-2 border rounded text-sm bg-white"
+              <input required type="number" step="any" placeholder="Longitude" className="w-full p-3 border border-slate-300 rounded-xl text-[16px] bg-white shadow-inner focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 value={formData.lng} onChange={e => setFormData({...formData, lng: e.target.value})} />
             </div>
-            {formData.accuracy > 0 && <p className="text-xs text-green-600 mt-1">Akurasi: ±{formData.accuracy} meter</p>}
+            {formData.accuracy > 0 && <p className="text-xs text-green-600 mt-2 font-medium flex items-center gap-1"><Wifi size={12}/> Akurasi GPS: ±{formData.accuracy} meter</p>}
           </div>
         ) : (
-          <div className="bg-slate-800 text-white p-4 rounded-xl shadow-lg text-center">
-            <div className="text-3xl font-mono mb-1">
-              {(distance / 1000).toFixed(2)} <span className="text-base text-slate-300">KM</span>
+          <div className="bg-slate-800 text-white p-5 rounded-2xl shadow-xl text-center relative overflow-hidden">
+            <div className="text-4xl font-mono mb-1 font-bold">
+              {(distance / 1000).toFixed(2)} <span className="text-lg text-slate-300 font-sans">KM</span>
             </div>
-            <p className="text-xs text-slate-400">Jarak Perekaman GPS</p>
-            <div className="flex gap-2 mt-4">
+            <p className="text-sm text-slate-400 font-medium">Jarak Terekam</p>
+            <div className="flex flex-col sm:flex-row gap-3 mt-5">
               <button type="button" onClick={toggleTracking} disabled={isSimulating}
-                className={`flex-1 py-3 rounded font-bold text-sm transition-all disabled:opacity-50 ${isTracking && !isSimulating ? 'bg-red-500 hover:bg-red-600 animate-pulse' : 'bg-green-500 hover:bg-green-600'}`}>
-                {isTracking && !isSimulating ? '⏹ Stop' : '⏺ Mulai Asli'}
+                className={`flex-1 py-4 rounded-xl font-bold text-base transition-all disabled:opacity-50 active:scale-[0.98] shadow-lg ${isTracking && !isSimulating ? 'bg-red-500 hover:bg-red-600 animate-pulse shadow-red-500/30' : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/30'}`}>
+                {isTracking && !isSimulating ? '⏹ Hentikan Perekaman' : '⏺ Mulai Rekam Asli'}
               </button>
               <button type="button" onClick={toggleSimulation} disabled={isTracking && !isSimulating}
-                className={`flex-1 py-3 rounded font-bold text-sm transition-all disabled:opacity-50 ${isSimulating ? 'bg-red-500 hover:bg-red-600 animate-pulse' : 'bg-blue-500 hover:bg-blue-600'}`}>
-                {isSimulating ? '⏹ Stop Simulasi' : '🎮 Simulasi Track'}
+                className={`flex-1 py-4 rounded-xl font-bold text-base transition-all disabled:opacity-50 active:scale-[0.98] shadow-lg ${isSimulating ? 'bg-red-500 hover:bg-red-600 animate-pulse shadow-red-500/30' : 'bg-blue-500 hover:bg-blue-600 shadow-blue-500/30'}`}>
+                {isSimulating ? '⏹ Hentikan Simulasi' : '🎮 Simulasi Track'}
               </button>
             </div>
             {path.length > 0 && leafletLoaded && (
-              <div className="h-32 w-full rounded-lg overflow-hidden border border-slate-600 mt-4">
+              <div className="h-40 w-full rounded-xl overflow-hidden border-2 border-slate-700 mt-5 shadow-inner">
                 <MiniMap path={path} />
               </div>
             )}
           </div>
         )}
 
-        <div className="space-y-3 pt-2">
+        <div className="space-y-5">
           <div>
-            <label className="block text-sm font-medium mb-1">Nama Jalan / Ruas *</label>
-            <input required type="text" className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
+            <label className="block text-sm font-semibold text-slate-700 mb-2">Nama Jalan / Ruas *</label>
+            <input required type="text" placeholder="Cth: Jl. Ahmad Yani" className="w-full p-3.5 border border-slate-300 rounded-xl text-[16px] shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
               value={formData.roadName} onChange={e => setFormData({...formData, roadName: e.target.value})} disabled={isTracking} />
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Jenis Permukaan (Bisa pilih {'>'} 1)</label>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            <label className="block text-sm font-semibold text-slate-700 mb-2">Jenis Permukaan (Bisa Pilih Banyak)</label>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               {['Aspal', 'Beton', 'Paving Block', 'Berbatuan', 'Tanah', 'Berlobang'].map(tipe => (
-                <label key={tipe} className="flex items-center gap-2 text-xs border p-2 rounded cursor-pointer hover:bg-slate-50 text-slate-700">
-                  <input type="checkbox" checked={formData.surfaceTypes.includes(tipe)} onChange={() => handleSurfaceToggle(tipe)} disabled={isTracking} className="rounded text-blue-600 w-4 h-4 cursor-pointer" />
+                <label key={tipe} className={`flex items-center gap-3 text-sm border p-3 rounded-xl cursor-pointer transition-colors shadow-sm ${formData.surfaceTypes.includes(tipe) ? 'bg-blue-50 border-blue-300 text-blue-800 font-medium' : 'bg-white hover:bg-slate-50 text-slate-700'}`}>
+                  <input type="checkbox" checked={formData.surfaceTypes.includes(tipe)} onChange={() => handleSurfaceToggle(tipe)} disabled={isTracking} className="rounded text-blue-600 w-5 h-5 cursor-pointer accent-blue-600" />
                   {tipe}
                 </label>
               ))}
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Kondisi *</label>
-              <select className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Kondisi *</label>
+              <select className="w-full p-3.5 border border-slate-300 rounded-xl text-[16px] shadow-sm bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 value={formData.condition} onChange={e => setFormData({...formData, condition: e.target.value})} disabled={isTracking}>
                 <option>Baik</option><option>Sedang</option><option>Rusak Ringan</option><option>Rusak Berat</option>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Tahun *</label>
-              <input required type="number" min="2000" max="2100" className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Tahun *</label>
+              <input required type="number" min="2000" max="2100" className="w-full p-3.5 border border-slate-300 rounded-xl text-[16px] shadow-sm bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 value={formData.year} onChange={e => setFormData({...formData, year: e.target.value})} disabled={isTracking} />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Keterangan Tambahan</label>
-            <textarea rows="2" className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
+            <label className="block text-sm font-semibold text-slate-700 mb-2">Keterangan Tambahan</label>
+            <textarea rows="3" placeholder="Deskripsi opsional..." className="w-full p-3.5 border border-slate-300 rounded-xl text-[16px] shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
               value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} disabled={isTracking}></textarea>
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Link Video (Google Drive/YouTube)</label>
-            <input type="url" placeholder="https://..." className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 text-sm"
+            <label className="block text-sm font-semibold text-slate-700 mb-2">Tautan Video (G-Drive / YouTube)</label>
+            <input type="url" placeholder="https://..." className="w-full p-3.5 border border-slate-300 rounded-xl text-[16px] shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
               value={formData.videoUrl} onChange={e => setFormData({...formData, videoUrl: e.target.value})} disabled={isTracking} />
           </div>
 
           {!isTracking && (
             <div>
-              <label className="block text-sm font-medium mb-1">Foto Kondisi Jalan</label>
-              <div className="flex flex-wrap gap-2 mb-2">
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Dokumentasi Foto</label>
+              <div className="flex flex-wrap gap-3 mb-2">
                 {(formData.photos || []).map((photo, i) => (
-                  <div key={i} className="relative w-16 h-16 border rounded overflow-hidden shadow-sm">
+                  <div key={i} className="relative w-20 h-20 border rounded-xl overflow-hidden shadow-sm">
                     <img src={photo} alt={`Preview ${i}`} className="w-full h-full object-cover" />
-                    <button type="button" onClick={() => removePhoto(i)} className="absolute top-0 right-0 bg-red-500/80 hover:bg-red-600 text-white p-1 text-[10px] rounded-bl"><X size={10} /></button>
+                    <button type="button" onClick={() => removePhoto(i)} className="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white p-1.5 rounded-full shadow-md active:scale-95"><X size={12} /></button>
                   </div>
                 ))}
-                <label className="w-16 h-16 border-2 border-dashed border-blue-300 rounded flex flex-col items-center justify-center text-blue-500 cursor-pointer hover:bg-blue-50 transition-colors">
-                  <Camera size={18} />
-                  <span className="text-[8px] mt-1 font-medium text-center leading-tight">Ambil<br/>Foto</span>
+                <label className="w-20 h-20 border-2 border-dashed border-blue-300 bg-blue-50 rounded-xl flex flex-col items-center justify-center text-blue-500 cursor-pointer hover:bg-blue-100 transition-colors active:scale-95">
+                  <Camera size={24} />
+                  <span className="text-[10px] mt-1 font-bold text-center leading-tight">Tambah<br/>Foto</span>
                   <input type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={handlePhotoUpload} />
                 </label>
               </div>
@@ -519,14 +500,14 @@ export default function App() {
           )}
         </div>
 
-        <div className="flex gap-2 pt-2">
+        <div className="flex gap-3 pt-4 border-t border-slate-100">
           <button disabled={isSaving || isTracking || (mappingType === 'track' && path.length < 2)} type="submit" 
-            className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-bold flex justify-center items-center gap-2 hover:bg-blue-700 disabled:opacity-50">
-            <Save size={20} /> {isSaving ? 'Menyimpan...' : 'Simpan Data'}
+            className="flex-1 bg-blue-600 text-white py-4 rounded-xl font-bold text-lg flex justify-center items-center gap-2 hover:bg-blue-700 disabled:opacity-50 active:scale-[0.98] transition-all shadow-lg shadow-blue-600/30">
+            <Save size={22} /> {isSaving ? 'Menyimpan...' : 'Simpan Data GPS'}
           </button>
           {mappingType === 'track' && (
-            <button type="button" onClick={downloadGeoJSON} disabled={path.length < 2 || isTracking} className="bg-gray-200 text-gray-700 p-3 rounded-lg font-bold disabled:opacity-50 flex justify-center items-center">
-              <Download size={20} />
+            <button type="button" onClick={downloadGeoJSON} disabled={path.length < 2 || isTracking} className="bg-slate-200 text-slate-700 px-5 rounded-xl font-bold disabled:opacity-50 flex justify-center items-center active:scale-[0.98] transition-transform">
+              <Download size={22} />
             </button>
           )}
         </div>
@@ -538,7 +519,6 @@ export default function App() {
     );
   };
 
-  // --- TAB: MAIN MAP ---
   const MapView = () => {
     const [filterCondition, setFilterCondition] = useState('Semua');
     const [filterYear, setFilterYear] = useState('Semua');
@@ -557,6 +537,9 @@ export default function App() {
         const esri = window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: '&copy; Esri' });
         osm.addTo(mapInstance.current);
 
+        // Pindahkan kontrol zoom ke kiri atas agar tidak tertutup jari/legenda di HP
+        window.L.control.zoom({ position: 'topleft' }).addTo(mapInstance.current);
+
         boundaryLayer.current = window.L.geoJSON(batasKelurahanGeoJSON, {
           style: function () { return { color: "#0ea5e9", weight: 3, opacity: 1, fillOpacity: 0.05, fillColor: "#0ea5e9" }; },
           interactive: false
@@ -567,7 +550,7 @@ export default function App() {
 
         setTimeout(() => {
           if (mapInstance.current && boundaryLayer.current) {
-            mapInstance.current.invalidateSize(); mapInstance.current.fitBounds(boundaryLayer.current.getBounds(), { padding: [20, 20] });
+            mapInstance.current.invalidateSize(); mapInstance.current.fitBounds(boundaryLayer.current.getBounds(), { padding: [10, 10] });
           }
         }, 250);
 
@@ -582,120 +565,108 @@ export default function App() {
         return matchCondition && matchYear;
       });
 
-      const createCustomIcon = (color) => window.L.divIcon({ className: 'custom-leaflet-icon', html: `<div style="background-color: ${color}; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>`, iconSize: [20, 20], iconAnchor: [10, 10] });
+      const createCustomIcon = (color) => window.L.divIcon({ className: 'custom-leaflet-icon', html: `<div style="background-color: ${color}; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.4);"></div>`, iconSize: [24, 24], iconAnchor: [12, 12] });
       const icons = { 'Baik': createCustomIcon('#22c55e'), 'Sedang': createCustomIcon('#eab308'), 'Rusak Ringan': createCustomIcon('#f97316'), 'Rusak Berat': createCustomIcon('#ef4444'), 'default': createCustomIcon('#3b82f6') };
       const getPolylineColor = (condition) => { switch(condition) { case 'Baik': return '#22c55e'; case 'Sedang': return '#eab308'; case 'Rusak Ringan': return '#f97316'; case 'Rusak Berat': return '#ef4444'; default: return '#3b82f6'; } };
 
       filteredRoads.forEach(road => {
-        const photoHTML = road.photos && road.photos.length > 0 ? `<div style="display: flex; gap: 4px; overflow-x: auto; margin-bottom: 0.5rem; padding-bottom: 4px;">${road.photos.map(p => `<img src="${p}" style="height: 60px; min-width: 60px; border-radius: 4px; object-fit: cover; border: 1px solid #e5e7eb;" />`).join('')}</div>` : '';
-        const videoHTML = road.videoUrl ? `<a href="${road.videoUrl}" target="_blank" style="display: flex; align-items: center; gap: 4px; font-size: 0.75rem; color: #fff; background-color: #ef4444; padding: 4px 8px; border-radius: 4px; text-decoration: none; margin-bottom: 0.5rem; width: fit-content;">▶️ Tonton Video</a>` : '';
+        const photoHTML = road.photos && road.photos.length > 0 ? `<div style="display: flex; gap: 8px; overflow-x: auto; margin-bottom: 0.75rem; padding-bottom: 4px;">${road.photos.map(p => `<img src="${p}" style="height: 80px; min-width: 80px; border-radius: 8px; object-fit: cover; border: 1px solid #e5e7eb; box-shadow: 0 1px 2px rgba(0,0,0,0.05);" />`).join('')}</div>` : '';
+        const videoHTML = road.videoUrl ? `<a href="${road.videoUrl}" target="_blank" style="display: flex; align-items: center; gap: 6px; font-size: 0.85rem; font-weight: bold; color: #fff; background-color: #ef4444; padding: 6px 12px; border-radius: 6px; text-decoration: none; margin-bottom: 0.75rem; width: fit-content; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3);">▶️ Tonton Video</a>` : '';
+
+        const popupContent = `
+            <div style="min-width: 220px; font-family: sans-serif;">
+              <h3 style="font-weight: 800; font-size: 1.25rem; margin-bottom: 0.75rem; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 4px;">${road.roadName}</h3>
+              ${photoHTML}${videoHTML}
+              <div style="font-size: 0.85rem; margin-bottom: 0.75rem; background-color: #f8fafc; padding: 0.75rem; border-radius: 0.5rem; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; border: 1px solid #e2e8f0;">
+                <div style="grid-column: span 2;"><span style="color: #64748b; display: block; font-size: 0.75rem;">Permukaan:</span> <b style="color: #334155;">${road.surfaceTypes && road.surfaceTypes.length > 0 ? road.surfaceTypes.join(', ') : '-'}</b></div>
+                <div><span style="color: #64748b; display: block; font-size: 0.75rem;">Kondisi:</span> <b style="color: #334155;">${road.condition}</b></div>
+                <div><span style="color: #64748b; display: block; font-size: 0.75rem;">Tahun:</span> <b style="color: #334155;">${road.year || '-'}</b></div>
+                ${road.type === 'track' ? `<div style="grid-column: span 2;"><span style="color: #64748b; display: block; font-size: 0.75rem;">Panjang Jalur:</span> <b style="color: #334155;">${(road.distanceMeters / 1000).toFixed(2)} km</b></div>` : ''}
+              </div>
+              ${road.description ? `<p style="font-size: 0.85rem; font-style: italic; background-color: #fefce8; padding: 0.5rem; border-left: 3px solid #facc15; margin-bottom: 0.75rem; border-radius: 0 0.25rem 0.25rem 0; color: #854d0e;">"${road.description}"</p>` : ''}
+              <p style="font-size: 0.7rem; color: #94a3b8; text-align: right;">Disurvei: ${new Date(road.surveyDate).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year:'numeric'})}</p>
+            </div>
+          `;
 
         if (road.type === 'point' && road.location) {
           const marker = window.L.marker([road.location.lat, road.location.lng], { icon: icons[road.condition] || icons.default });
-          marker.bindPopup(`
-            <div style="min-width: 200px;">
-              <h3 style="font-weight: bold; font-size: 1.125rem; margin-bottom: 0.5rem;">${road.roadName}</h3>
-              ${photoHTML}${videoHTML}
-              <div style="font-size: 0.75rem; margin-bottom: 0.5rem; background-color: #f9fafb; padding: 0.5rem; border-radius: 0.25rem; display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
-                <div style="grid-column: span 2;"><span style="color: #9ca3af; display: block;">Permukaan:</span> <b>${road.surfaceTypes && road.surfaceTypes.length > 0 ? road.surfaceTypes.join(', ') : '-'}</b></div>
-                <div><span style="color: #9ca3af; display: block;">Kondisi:</span> <b>${road.condition}</b></div>
-                <div><span style="color: #9ca3af; display: block;">Tahun:</span> <b>${road.year || '-'}</b></div>
-              </div>
-              ${road.description ? `<p style="font-size: 0.75rem; font-style: italic; background-color: #fefce8; padding: 0.25rem; border-left: 2px solid #facc15; margin-bottom: 0.5rem;">${road.description}</p>` : ''}
-              <p style="font-size: 0.625rem; color: #9ca3af;">Tgl: ${new Date(road.surveyDate).toLocaleDateString('id-ID')}</p>
-            </div>
-          `);
+          marker.bindPopup(popupContent, { maxWidth: 300 });
           markersGroup.current.addLayer(marker);
         } else if (road.type === 'track' && road.trackPath) {
-          const polyline = window.L.polyline(road.trackPath, { color: getPolylineColor(road.condition), weight: 5, opacity: 0.8 });
-          polyline.bindPopup(`
-            <div style="min-width: 200px;">
-              <h3 style="font-weight: bold; margin-bottom: 0.5rem;">${road.roadName}</h3>
-              ${photoHTML}${videoHTML}
-              <div style="font-size: 0.75rem; margin-bottom: 0.5rem; background-color: #f9fafb; padding: 0.5rem; border-radius: 0.25rem; display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
-                <div style="grid-column: span 2;"><span style="color: #9ca3af; display: block;">Permukaan:</span> <b>${road.surfaceTypes && road.surfaceTypes.length > 0 ? road.surfaceTypes.join(', ') : '-'}</b></div>
-                <div><span style="color: #9ca3af; display: block;">Kondisi:</span> <b>${road.condition}</b></div>
-                <div><span style="color: #9ca3af; display: block;">Tahun:</span> <b>${road.year || '-'}</b></div>
-                <div style="grid-column: span 2;"><span style="color: #9ca3af; display: block;">Panjang:</span> <b>${(road.distanceMeters / 1000).toFixed(2)} km</b></div>
-              </div>
-              ${road.description ? `<p style="font-size: 0.75rem; font-style: italic; background-color: #fefce8; padding: 0.25rem; border-left: 2px solid #facc15; margin-bottom: 0.5rem;">${road.description}</p>` : ''}
-              <p style="font-size: 0.625rem; color: #9ca3af;">Tgl: ${new Date(road.surveyDate).toLocaleDateString('id-ID')}</p>
-            </div>
-          `);
+          const polyline = window.L.polyline(road.trackPath, { color: getPolylineColor(road.condition), weight: 6, opacity: 0.85 });
+          polyline.bindPopup(popupContent, { maxWidth: 300 });
           markersGroup.current.addLayer(polyline);
         }
       });
     }, [roadsData, filterCondition, filterYear, leafletLoaded]);
 
-    if (!leafletLoaded) return <div className="h-full w-full flex items-center justify-center bg-gray-100 text-gray-500">Memuat Komponen Peta...</div>;
+    if (!leafletLoaded) return <div className="absolute inset-0 flex items-center justify-center bg-slate-50 text-slate-400 font-medium">Memuat Komponen Peta GIS...</div>;
 
     return (
-      <div className="relative h-[calc(100vh-60px)] w-full">
-        {/* Floating Filter Panel */}
-        <div className="absolute top-4 right-4 z-[1000] bg-white rounded-lg shadow-lg p-3 flex flex-col gap-2 min-w-[150px]">
-          <div className="flex flex-col gap-1 border-b pb-2">
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Kondisi Jalan</span>
-            <select className="text-sm p-1 border border-gray-100 rounded focus:ring-1 focus:ring-blue-500 outline-none bg-transparent cursor-pointer" value={filterCondition} onChange={e => setFilterCondition(e.target.value)}>
+      <div className="absolute inset-0 w-full h-full">
+        {/* Floating Filter Panel - Lebih compact untuk HP */}
+        <div className="absolute top-3 right-3 z-[1000] bg-white/95 backdrop-blur rounded-xl shadow-lg p-3 flex flex-col gap-3 min-w-[140px] border border-slate-100">
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest">Kondisi Jalan</span>
+            <select className="text-sm p-1.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50 cursor-pointer font-medium text-slate-700" value={filterCondition} onChange={e => setFilterCondition(e.target.value)}>
               <option>Semua</option><option>Baik</option><option>Sedang</option><option>Rusak Ringan</option><option>Rusak Berat</option>
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Tahun Anggaran</span>
-            <select className="text-sm p-1 border border-gray-100 rounded focus:ring-1 focus:ring-blue-500 outline-none bg-transparent cursor-pointer" value={filterYear} onChange={e => setFilterYear(e.target.value)}>
+            <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest">Tahun Dana</span>
+            <select className="text-sm p-1.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50 cursor-pointer font-medium text-slate-700" value={filterYear} onChange={e => setFilterYear(e.target.value)}>
               <option>Semua</option>
               {uniqueYears.map(yr => <option key={yr} value={yr}>{yr}</option>)}
             </select>
           </div>
         </div>
 
-        {/* Legend */}
-        <div className="absolute bottom-20 left-4 z-[1000] bg-white/90 p-2 rounded shadow text-xs">
-          <div className="font-bold mb-1">Legenda</div>
-          <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-[#22c55e]"></div> Baik</div>
-          <div className="flex items-center gap-2 mt-1"><div className="w-3 h-3 rounded-full bg-[#eab308]"></div> Sedang</div>
-          <div className="flex items-center gap-2 mt-1"><div className="w-3 h-3 rounded-full bg-[#f97316]"></div> Rusak Ringan</div>
-          <div className="flex items-center gap-2 mt-1"><div className="w-3 h-3 rounded-full bg-[#ef4444]"></div> Rusak Berat</div>
+        {/* Legend - Dipindah ke kiri bawah sedikit ke atas menghindari atribusi leaflet */}
+        <div className="absolute bottom-6 left-3 z-[1000] bg-white/95 backdrop-blur p-3 rounded-xl shadow-lg text-xs border border-slate-100 font-medium text-slate-700">
+          <div className="font-extrabold mb-2 text-slate-800 border-b pb-1">Legenda Peta</div>
+          <div className="flex items-center gap-2.5"><div className="w-3.5 h-3.5 rounded-full bg-[#22c55e] shadow-sm border border-white"></div> Baik</div>
+          <div className="flex items-center gap-2.5 mt-1.5"><div className="w-3.5 h-3.5 rounded-full bg-[#eab308] shadow-sm border border-white"></div> Sedang</div>
+          <div className="flex items-center gap-2.5 mt-1.5"><div className="w-3.5 h-3.5 rounded-full bg-[#f97316] shadow-sm border border-white"></div> Rusak Ringan</div>
+          <div className="flex items-center gap-2.5 mt-1.5"><div className="w-3.5 h-3.5 rounded-full bg-[#ef4444] shadow-sm border border-white"></div> Rusak Berat</div>
         </div>
-        <div ref={mapRef} style={{ height: '100%', width: '100%', zIndex: 1 }}></div>
+        <div ref={mapRef} className="w-full h-full z-0"></div>
       </div>
     );
   };
 
-  // --- RENDER LAYOUT ---
   return (
-    <div className="flex flex-col h-screen bg-white font-sans text-gray-800">
-      <header className="bg-slate-900 text-white p-3 flex justify-between items-center shadow-md z-10">
-        <div className="flex items-center gap-2">
-          <MapPin className="text-blue-400" />
-          <h1 className="font-bold text-lg leading-tight">GIS Kelurahan<span className="block text-xs text-slate-400 font-normal">Peta Sebaran Jalan</span></h1>
-        </div>
+    <div className="flex flex-col h-screen bg-slate-50 font-sans text-slate-800 overflow-hidden">
+      <header className="bg-slate-900 text-white p-4 flex justify-between items-center shadow-md z-20 pb-safe-top relative">
         <div className="flex items-center gap-3">
-          <div className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${isOnline ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
-            {isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}
-            <span className="hidden sm:inline">{isOnline ? 'Online' : 'Offline Mode'}</span>
+          <div className="bg-blue-500 p-2 rounded-lg shadow-inner"><MapPin size={20} className="text-white" /></div>
+          <div>
+            <h1 className="font-extrabold text-lg leading-tight tracking-tight">GIS Kelurahan</h1>
+            <span className="block text-[11px] text-blue-200 font-medium">Peta Sebaran Jalan</span>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto relative z-0">
+      <main className="flex-1 relative z-0 overflow-y-auto w-full">
         {activeTab === 'map' && <MapView />}
         {activeTab === 'input' && <UnifiedForm />}
         
         {toast.show && (
-          <div className={`absolute top-4 left-1/2 transform -translate-x-1/2 z-[9999] px-4 py-2 rounded shadow-lg text-sm flex items-center gap-2 text-white animate-fade-in-down ${toast.type === 'error' ? 'bg-red-600' : toast.type === 'success' ? 'bg-green-600' : 'bg-slate-800'}`}>
-            {toast.message} <button onClick={() => setToast({...toast, show: false})}><X size={14}/></button>
+          <div className={`fixed top-20 left-1/2 transform -translate-x-1/2 z-[9999] px-5 py-3 rounded-full shadow-2xl text-sm font-bold flex items-center gap-3 text-white animate-fade-in-down w-[90%] max-w-sm justify-between ${toast.type === 'error' ? 'bg-red-600' : toast.type === 'success' ? 'bg-emerald-600' : 'bg-slate-800'}`}>
+            <span className="truncate">{toast.message}</span> 
+            <button onClick={() => setToast({...toast, show: false})} className="bg-black/20 p-1 rounded-full"><X size={16}/></button>
           </div>
         )}
       </main>
 
-      <nav className="bg-white border-t flex justify-around p-2 pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-20">
-        <button onClick={() => setActiveTab('map')} className={`flex-1 flex flex-col items-center p-2 rounded-lg transition-colors ${activeTab === 'map' ? 'text-blue-600 bg-blue-50' : 'text-gray-500 hover:bg-gray-50'}`}>
-          <MapIcon size={24} />
-          <span className="text-[10px] font-medium mt-1">Lihat Peta</span>
+      {/* Mobile Friendly Bottom Navigation */}
+      <nav className="bg-white border-t border-slate-200 flex justify-around p-2 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] shadow-[0_-10px_20px_rgba(0,0,0,0.03)] z-20 relative">
+        <button onClick={() => setActiveTab('map')} className={`flex-1 flex flex-col items-center py-2.5 px-1 rounded-2xl transition-all ${activeTab === 'map' ? 'text-blue-700 bg-blue-50 scale-105 font-bold shadow-sm' : 'text-slate-400 hover:text-slate-600 font-medium'}`}>
+          <MapIcon size={24} className={activeTab === 'map' ? 'stroke-[2.5px]' : 'stroke-2'} />
+          <span className="text-[11px] mt-1.5">Lihat Peta</span>
         </button>
-        <button onClick={() => setActiveTab('input')} className={`flex-1 flex flex-col items-center p-2 rounded-lg transition-colors ${activeTab === 'input' ? 'text-blue-600 bg-blue-50' : 'text-gray-500 hover:bg-gray-50'}`}>
-          <PlusSquare size={24} />
-          <span className="text-[10px] font-medium mt-1">Input Data</span>
+        <button onClick={() => setActiveTab('input')} className={`flex-1 flex flex-col items-center py-2.5 px-1 rounded-2xl transition-all ${activeTab === 'input' ? 'text-blue-700 bg-blue-50 scale-105 font-bold shadow-sm' : 'text-slate-400 hover:text-slate-600 font-medium'}`}>
+          <PlusSquare size={24} className={activeTab === 'input' ? 'stroke-[2.5px]' : 'stroke-2'} />
+          <span className="text-[11px] mt-1.5">Input Data</span>
         </button>
       </nav>
     </div>
