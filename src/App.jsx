@@ -164,19 +164,44 @@ export default function App() {
     );
   };
 
-  const MiniMap = ({ path }) => {
-    const mapRef = useRef(null); const mapInstance = useRef(null); const polylineRef = useRef(null);
-    useEffect(() => {
-      if (!window.L || !mapRef.current) return;
-      const lastPoint = path[path.length - 1];
-      if (!mapInstance.current) {
-        mapInstance.current = window.L.map(mapRef.current, { zoomControl: false, dragging: false, scrollWheelZoom: false }).setView(lastPoint, 16);
-        window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapInstance.current);
-      } else mapInstance.current.setView(lastPoint, 16);
+  const MiniMap = ({ path, isTracking }) => {
+    const mapRef = useRef(null); 
+    const mapInstance = useRef(null); 
+    const polylineRef = useRef(null);
+    const markerRef = useRef(null);
 
+    useEffect(() => {
+      if (!window.L || !mapRef.current || path.length === 0) return;
+      const lastPoint = path[path.length - 1];
+      
+      if (!mapInstance.current) {
+        mapInstance.current = window.L.map(mapRef.current, { zoomControl: false, dragging: false, scrollWheelZoom: false }).setView(lastPoint, 17);
+        window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapInstance.current);
+      }
+
+      // 1. Gambar Garis (Polyline) jika ada lebih dari 1 titik
       if (polylineRef.current) mapInstance.current.removeLayer(polylineRef.current);
-      polylineRef.current = window.L.polyline(path, { color: '#3b82f6', weight: 5 }).addTo(mapInstance.current);
-    }, [path]);
+      if (path.length > 1) {
+        polylineRef.current = window.L.polyline(path, { color: '#3b82f6', weight: 5 }).addTo(mapInstance.current);
+      }
+
+      // 2. Gambar Titik Merah (Marker) di posisi terakhir agar langsung terlihat saat merekam
+      if (markerRef.current) mapInstance.current.removeLayer(markerRef.current);
+      markerRef.current = window.L.circleMarker(lastPoint, { 
+        radius: 6, color: '#ffffff', weight: 2, fillOpacity: 1, fillColor: '#ef4444' 
+      }).addTo(mapInstance.current);
+
+      // 3. Atur pandangan peta
+      if (isTracking) {
+        // Jika sedang merekam, kamera selalu mengikuti titik terakhir
+        mapInstance.current.setView(lastPoint, 17);
+      } else if (path.length > 1 && polylineRef.current) {
+        // Jika sudah STOP merekam, sesuaikan kamera (zoom out) agar seluruh garis terlihat
+        mapInstance.current.fitBounds(polylineRef.current.getBounds(), { padding: [15, 15] });
+      }
+
+    }, [path, isTracking]);
+
     return <div ref={mapRef} className="h-full w-full rounded-xl z-0 pointer-events-none" />;
   };
 
@@ -261,15 +286,22 @@ export default function App() {
         watchIdRef.current = navigator.geolocation.watchPosition(
           (pos) => {
             const { latitude, longitude, accuracy } = pos.coords;
-            if (accuracy > 30) return; 
+            // Toleransi akurasi diperlebar (100) agar saat dites rekaman GPS lebih mudah tertangkap
+            if (accuracy > 100) return; 
+            
             setPath(prevPath => {
               const newPoint = [latitude, longitude];
               if (prevPath.length > 0) {
                 const lastPoint = prevPath[prevPath.length - 1];
                 const dist = calculateDistance(lastPoint[0], lastPoint[1], latitude, longitude);
-                if (dist > 2) { setDistance(d => d + dist); return [...prevPath, newPoint]; }
+                // Jarak minimal pergerakan diperkecil jadi 1 meter agar lebih responsif
+                if (dist > 1) { 
+                  setDistance(d => d + dist); 
+                  return [...prevPath, newPoint]; 
+                }
                 return prevPath;
               }
+              // Catat titik pertama langsung
               return [newPoint];
             });
           },
@@ -438,13 +470,31 @@ export default function App() {
             <p className="text-xs text-slate-400 font-medium">Jarak Terekam</p>
             <div className="mt-4">
               <button type="button" onClick={toggleTracking}
-                className={`w-full py-4 rounded-xl font-bold text-base transition-all active:scale-[0.98] shadow-lg flex justify-center items-center gap-2 ${isTracking ? 'bg-red-500 hover:bg-red-600 animate-pulse' : 'bg-emerald-500 hover:bg-emerald-600'}`}>
-                {isTracking ? <><X size={20}/> Stop Perekaman</> : <><Activity size={20}/> Mulai Rekam Track</>}
+                className={`w-full py-4 rounded-xl font-bold text-base transition-all active:scale-[0.98] shadow-lg flex justify-center items-center gap-2 ${isTracking ? 'bg-red-500 hover:bg-red-600 animate-pulse' : (path.length > 0 ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-500 hover:bg-emerald-600')}`}>
+                {isTracking ? <><X size={20}/> Stop Perekaman</> : (path.length > 0 ? <><Activity size={20}/> Ulangi Rekam Track</> : <><Activity size={20}/> Mulai Rekam Track</>)}
               </button>
             </div>
+
+            {/* Indikator Status Perekaman */}
+            {isTracking && path.length === 0 && (
+              <div className="mt-4 text-sm text-yellow-300 animate-pulse flex justify-center items-center gap-2 font-medium">
+                <Activity size={16}/> Mencari Sinyal GPS...
+              </div>
+            )}
+            {isTracking && path.length === 1 && (
+              <div className="mt-4 text-sm text-green-300 flex justify-center items-center gap-2 font-medium">
+                <MapPin size={16}/> Titik awal didapat. Silakan mulai bergerak.
+              </div>
+            )}
+
             {path.length > 0 && leafletLoaded && (
-              <div className="h-32 w-full rounded-xl overflow-hidden border-2 border-slate-700 mt-4 shadow-inner">
-                <MiniMap path={path} />
+              <div className="h-40 w-full rounded-xl overflow-hidden border-2 border-slate-700 mt-4 shadow-inner relative">
+                {isTracking && (
+                  <div className="absolute top-2 left-2 z-[1000] bg-red-600 text-white text-[10px] px-2 py-1 rounded shadow-md animate-pulse font-black tracking-widest">
+                    REC
+                  </div>
+                )}
+                <MiniMap path={path} isTracking={isTracking} />
               </div>
             )}
           </div>
