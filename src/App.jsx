@@ -145,8 +145,8 @@ export default function App() {
     }, [initialLat, initialLng]);
 
     return (
-      <div className="fixed inset-0 z-[9999] bg-white flex flex-col">
-        <div className="p-4 bg-slate-900 text-white flex justify-between items-center shadow-md pb-safe-top">
+      <div className="fixed top-0 left-0 right-0 bottom-0 h-[100dvh] z-[9999] bg-white flex flex-col">
+        <div className="p-4 pt-[max(env(safe-area-inset-top),1rem)] bg-slate-900 text-white flex justify-between items-center shadow-md">
           <h3 className="font-bold text-lg">Pilih Titik Lokasi</h3>
           <button type="button" onClick={onClose} className="p-2 hover:bg-slate-700 rounded-full active:scale-95 transition-transform"><X size={24}/></button>
         </div>
@@ -154,7 +154,7 @@ export default function App() {
           Sentuh area peta untuk memindahkan titik (Pin).
         </div>
         <div className="flex-1 relative"><div ref={mapRef} style={{ height: '100%', width: '100%' }}></div></div>
-        <div className="p-4 bg-white border-t shadow-[0_-4px_10px_rgba(0,0,0,0.1)] pb-safe">
+        <div className="p-4 pb-[max(env(safe-area-inset-bottom),1.5rem)] bg-white border-t shadow-[0_-4px_10px_rgba(0,0,0,0.1)]">
           <button type="button" onClick={() => { if(markerRef.current){ const pos = markerRef.current.getLatLng(); onSelect(pos.lat.toFixed(6), pos.lng.toFixed(6)); } onClose(); }} 
             className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold flex justify-center items-center gap-2 text-lg active:scale-[0.98] transition-transform shadow-lg shadow-blue-200">
             <MapPin size={22} /> Gunakan Titik Ini
@@ -375,7 +375,7 @@ export default function App() {
     };
 
     return (
-      <form onSubmit={handleSubmit} className="px-4 py-6 space-y-6 max-w-2xl mx-auto pb-32">
+      <form onSubmit={handleSubmit} className="px-4 py-6 space-y-6 max-w-2xl mx-auto pb-36">
         <div className="flex bg-slate-100 p-1.5 rounded-xl mb-4 shadow-inner">
           <button type="button" onClick={() => setMappingType('point')} disabled={isTracking}
             className={`flex flex-1 justify-center items-center gap-2 py-3 text-sm font-bold rounded-lg transition-all ${mappingType === 'point' ? 'bg-white shadow text-blue-600 scale-[1.02]' : 'text-slate-500 hover:text-slate-700'}`}>
@@ -635,8 +635,8 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50 font-sans text-slate-800 overflow-hidden">
-      <header className="bg-slate-900 text-white p-4 flex justify-between items-center shadow-md z-20 pb-safe-top relative">
+    <div className="flex flex-col h-[100dvh] w-full bg-slate-50 font-sans text-slate-800 overflow-hidden">
+      <header className="bg-slate-900 text-white px-4 py-4 pt-[max(env(safe-area-inset-top),1rem)] flex justify-between items-center shadow-md z-20 relative">
         <div className="flex items-center gap-3">
           <div className="bg-blue-500 p-2 rounded-lg shadow-inner"><MapPin size={20} className="text-white" /></div>
           <div>
@@ -651,7 +651,7 @@ export default function App() {
         {activeTab === 'input' && <UnifiedForm />}
         
         {toast.show && (
-          <div className={`fixed top-20 left-1/2 transform -translate-x-1/2 z-[9999] px-5 py-3 rounded-full shadow-2xl text-sm font-bold flex items-center gap-3 text-white animate-fade-in-down w-[90%] max-w-sm justify-between ${toast.type === 'error' ? 'bg-red-600' : toast.type === 'success' ? 'bg-emerald-600' : 'bg-slate-800'}`}>
+          <div className={`fixed top-[max(env(safe-area-inset-top),5rem)] left-1/2 transform -translate-x-1/2 z-[9999] px-5 py-3 rounded-full shadow-2xl text-sm font-bold flex items-center gap-3 text-white animate-fade-in-down w-[90%] max-w-sm justify-between ${toast.type === 'error' ? 'bg-red-600' : toast.type === 'success' ? 'bg-emerald-600' : 'bg-slate-800'}`}>
             <span className="truncate">{toast.message}</span> 
             <button onClick={() => setToast({...toast, show: false})} className="bg-black/20 p-1 rounded-full"><X size={16}/></button>
           </div>
@@ -659,7 +659,7 @@ export default function App() {
       </main>
 
       {/* Mobile Friendly Bottom Navigation */}
-      <nav className="bg-white border-t border-slate-200 flex justify-around p-2 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] shadow-[0_-10px_20px_rgba(0,0,0,0.03)] z-20 relative">
+      <nav className="bg-white border-t border-slate-200 flex justify-around px-2 pt-2 pb-[max(env(safe-area-inset-bottom),0.75rem)] shadow-[0_-10px_20px_rgba(0,0,0,0.03)] z-20 relative">
         <button onClick={() => setActiveTab('map')} className={`flex-1 flex flex-col items-center py-2.5 px-1 rounded-2xl transition-all ${activeTab === 'map' ? 'text-blue-700 bg-blue-50 scale-105 font-bold shadow-sm' : 'text-slate-400 hover:text-slate-600 font-medium'}`}>
           <MapIcon size={24} className={activeTab === 'map' ? 'stroke-[2.5px]' : 'stroke-2'} />
           <span className="text-[11px] mt-1.5">Lihat Peta</span>
