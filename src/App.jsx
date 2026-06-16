@@ -113,7 +113,7 @@
                 
                 useEffect(() => {
                     let timeoutId;
-                    if (!mapInstance.current) {
+                    if (!mapInstance.current && mapRef.current) {
                         mapInstance.current = L.map(mapRef.current, { zoomControl: false }).setView([-0.485, 117.155], 14);
                         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapInstance.current);
                         L.control.zoom({ position: 'bottomright' }).addTo(mapInstance.current);
@@ -123,39 +123,38 @@
                         markerRef.current = L.marker(markerPos, { draggable: true }).addTo(mapInstance.current);
 
                         timeoutId = setTimeout(() => { 
-                            if (mapInstance.current && mapInstance.current._container) {
+                            if (mapInstance.current && mapRef.current) {
                                 mapInstance.current.invalidateSize(); 
                                 mapInstance.current.setView(markerPos, 16); 
                             }
-                        }, 250);
+                        }, 300);
 
                         mapInstance.current.on('click', (e) => {
-                            markerRef.current.setLatLng(e.latlng);
-                            onSelect(e.latlng.lat.toFixed(6), e.latlng.lng.toFixed(6));
-                            onClose();
+                            if (markerRef.current) markerRef.current.setLatLng(e.latlng);
                         });
                     }
                     return () => { 
                         if (timeoutId) clearTimeout(timeoutId);
                         if (mapInstance.current) {
+                            mapInstance.current.off();
                             mapInstance.current.remove(); 
                             mapInstance.current = null;
                         }
                     };
-                }, []); // Init only once
+                }, []); 
 
                 return (
                     <div className="fixed inset-0 z-[9999] bg-white flex flex-col">
                         <div className="p-4 bg-slate-900 text-white flex justify-between items-center shadow-md">
                             <h3 className="font-bold text-lg">Pilih Titik Lokasi</h3>
-                            <button onClick={onClose} className="p-2 hover:bg-slate-700 rounded-full"><i class="ph ph-x text-xl"></i></button>
+                            <button onClick={onClose} className="p-2 hover:bg-slate-700 rounded-full"><i className="ph ph-x text-xl"></i></button>
                         </div>
                         <div className="bg-blue-50 p-3 text-sm text-blue-800 text-center font-medium shadow-inner">Sentuh area peta untuk memindahkan Pin.</div>
                         <div className="flex-1 relative"><div ref={mapRef} style={{ height: '100%', width: '100%' }}></div></div>
                         <div className="p-4 bg-white border-t">
-                            <button onClick={() => { const pos = markerRef.current.getLatLng(); onSelect(pos.lat.toFixed(6), pos.lng.toFixed(6)); onClose(); }} 
+                            <button onClick={() => { if(markerRef.current) { const pos = markerRef.current.getLatLng(); onSelect(pos.lat.toFixed(6), pos.lng.toFixed(6)); } onClose(); }} 
                                 className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold flex justify-center items-center gap-2 text-lg">
-                                <i class="ph ph-map-pin text-xl"></i> Gunakan Titik Ini
+                                <i className="ph ph-map-pin text-xl"></i> Gunakan Titik Ini
                             </button>
                         </div>
                     </div>
@@ -176,7 +175,7 @@
 
                 useEffect(() => {
                     let timeoutId;
-                    if (!mapInstance.current) {
+                    if (!mapInstance.current && mapRef.current) {
                         mapInstance.current = L.map(mapRef.current, { zoomControl: false }).setView([-0.485, 117.155], 15);
                         const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 });
                         const esri = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });
@@ -189,7 +188,7 @@
                         });
 
                         timeoutId = setTimeout(() => {
-                            if (mapInstance.current && mapInstance.current._container) {
+                            if (mapInstance.current && mapRef.current) {
                                 mapInstance.current.invalidateSize();
                                 if (points.length > 0) mapInstance.current.fitBounds(L.polyline(points).getBounds(), { padding: [20, 20] });
                             }
@@ -199,6 +198,7 @@
                         if (timeoutId) clearTimeout(timeoutId);
                         if (watchIdRef.current) navigator.geolocation.clearWatch(watchIdRef.current);
                         if (mapInstance.current) { 
+                            mapInstance.current.off();
                             mapInstance.current.remove(); 
                             mapInstance.current = null; 
                         } 
@@ -206,7 +206,7 @@
                 }, []);
 
                 useEffect(() => {
-                    if (!mapInstance.current) return;
+                    if (!mapInstance.current || !mapRef.current) return;
                     if (polylineRef.current) mapInstance.current.removeLayer(polylineRef.current);
                     if (markerStartRef.current) mapInstance.current.removeLayer(markerStartRef.current);
                     if (markerEndRef.current) mapInstance.current.removeLayer(markerEndRef.current);
@@ -238,7 +238,7 @@
                                     if (prev.length > 0 && calculateDistance(prev[prev.length-1][0], prev[prev.length-1][1], latitude, longitude) < 2) return prev;
                                     return [...prev, newPoint];
                                 });
-                                mapInstance.current.setView(newPoint, 18);
+                                if (mapInstance.current) mapInstance.current.setView(newPoint, 18);
                             },
                             (err) => { showToast("GPS Error", "error"); setIsGpsRecording(false); setMode('manual'); },
                             { enableHighAccuracy: true, timeout: 5000 }
@@ -250,27 +250,27 @@
                     <div className="fixed inset-0 z-[9999] bg-slate-50 flex flex-col font-sans">
                         <div className="p-4 bg-slate-900 text-white flex justify-between items-center shadow-md z-10">
                             <div><h3 className="font-bold text-lg">Editor Rute</h3><span className="text-[11px] text-slate-300">{(calculateTotalDistance(points)/1000).toFixed(2)} KM | {points.length} Titik</span></div>
-                            <button onClick={onClose} className="p-2 bg-slate-800 rounded-full"><i class="ph ph-x"></i></button>
+                            <button onClick={onClose} className="p-2 bg-slate-800 rounded-full"><i className="ph ph-x"></i></button>
                         </div>
                         <div className="flex-1 relative">
                             <div ref={mapRef} style={{ height: '100%', width: '100%' }}></div>
                             <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[1000]">
                                 <div className="bg-white/90 px-4 py-2 rounded-full shadow-lg border font-bold text-sm text-slate-700 flex items-center gap-2">
-                                    <i class={`ph ph-navigation-arrow ${isGpsRecording ? 'text-red-500 animate-pulse' : 'text-blue-500'}`}></i>
+                                    <i className={`ph ph-navigation-arrow ${isGpsRecording ? 'text-red-500 animate-pulse' : 'text-blue-500'}`}></i>
                                     {isGpsRecording ? 'Merekam GPS...' : (mode === 'manual' ? 'Sentuh Peta' : 'Siap')}
                                 </div>
                             </div>
                             <div className="absolute top-20 right-4 z-[1000] flex flex-col gap-3">
-                                <button onClick={() => setPoints(p => p.slice(0, -1))} disabled={points.length===0} className="bg-white p-3 rounded-xl shadow-lg text-slate-700"><i class="ph ph-arrow-u-up-left text-xl"></i></button>
-                                {points.length > 0 && <button onClick={() => setPoints([])} className="bg-white p-3 rounded-xl shadow-lg text-red-500"><i class="ph ph-trash text-xl"></i></button>}
+                                <button onClick={() => setPoints(p => p.slice(0, -1))} disabled={points.length===0} className="bg-white p-3 rounded-xl shadow-lg text-slate-700"><i className="ph ph-arrow-u-up-left text-xl"></i></button>
+                                {points.length > 0 && <button onClick={() => setPoints([])} className="bg-white p-3 rounded-xl shadow-lg text-red-500"><i className="ph ph-trash text-xl"></i></button>}
                             </div>
                         </div>
                         <div className="bg-white border-t pb-2 z-10 shadow-lg">
                             <div className="flex p-3 gap-3">
-                                <button onClick={() => { setMode('manual'); if(isGpsRecording) toggleGps(); }} className={`flex-1 flex flex-col items-center p-3 rounded-xl font-bold text-sm border ${mode === 'manual' && !isGpsRecording ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white'}`}><i class="ph ph-cursor-click text-2xl mb-1"></i> Manual</button>
-                                <button onClick={toggleGps} className={`flex-1 flex flex-col items-center p-3 rounded-xl font-bold text-sm border ${isGpsRecording ? 'bg-red-50 border-red-200 text-red-600 animate-pulse' : 'bg-white'}`}><i class="ph ph-activity text-2xl mb-1"></i> {isGpsRecording ? 'Stop GPS' : 'Rekam GPS'}</button>
+                                <button onClick={() => { setMode('manual'); if(isGpsRecording) toggleGps(); }} className={`flex-1 flex flex-col items-center p-3 rounded-xl font-bold text-sm border ${mode === 'manual' && !isGpsRecording ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white'}`}><i className="ph ph-cursor-click text-2xl mb-1"></i> Manual</button>
+                                <button onClick={toggleGps} className={`flex-1 flex flex-col items-center p-3 rounded-xl font-bold text-sm border ${isGpsRecording ? 'bg-red-50 border-red-200 text-red-600 animate-pulse' : 'bg-white'}`}><i className="ph ph-activity text-2xl mb-1"></i> {isGpsRecording ? 'Stop GPS' : 'Rekam GPS'}</button>
                             </div>
-                            <div className="px-3"><button onClick={() => onSave(points)} className="w-full bg-blue-600 text-white py-3.5 rounded-xl font-bold flex justify-center items-center gap-2"><i class="ph ph-check-circle text-xl"></i> Simpan Jalur</button></div>
+                            <div className="px-3"><button onClick={() => onSave(points)} className="w-full bg-blue-600 text-white py-3.5 rounded-xl font-bold flex justify-center items-center gap-2"><i className="ph ph-check-circle text-xl"></i> Simpan Jalur</button></div>
                         </div>
                     </div>
                 );
@@ -279,24 +279,31 @@
             const MiniMap = ({ path }) => {
                 const mapRef = useRef(null); const mapInstance = useRef(null); const polylineRef = useRef(null);
                 
-                // Initialize map once
                 useEffect(() => {
-                    if (!mapInstance.current) {
+                    let timeoutId;
+                    if (!mapInstance.current && mapRef.current) {
                         const startCenter = path && path.length > 0 ? path[0] : [-0.485, 117.155];
                         mapInstance.current = L.map(mapRef.current, { zoomControl: false, dragging: false, scrollWheelZoom: false }).setView(startCenter, 15);
                         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapInstance.current);
+                        
+                        timeoutId = setTimeout(() => {
+                            if (mapInstance.current && mapRef.current) {
+                                mapInstance.current.invalidateSize();
+                            }
+                        }, 250);
                     }
                     return () => {
+                        if (timeoutId) clearTimeout(timeoutId);
                         if (mapInstance.current) {
+                            mapInstance.current.off();
                             mapInstance.current.remove();
                             mapInstance.current = null;
                         }
                     };
                 }, []);
 
-                // Update polyline on path change
                 useEffect(() => {
-                    if (!mapInstance.current || !path || path.length === 0) return;
+                    if (!mapInstance.current || !mapRef.current || !path || path.length === 0) return;
                     if (polylineRef.current) mapInstance.current.removeLayer(polylineRef.current);
                     polylineRef.current = L.polyline(path, { color: '#3b82f6', weight: 4 }).addTo(mapInstance.current);
                     mapInstance.current.fitBounds(polylineRef.current.getBounds(), { padding: [10, 10] });
@@ -380,8 +387,8 @@
 
                         <div className="space-y-3"><label className="font-bold text-slate-700">1. Titik Lokasi Pusat</label>
                             <div className="flex gap-3">
-                                <button type="button" onClick={getGPS} className="flex-1 bg-blue-50 text-blue-700 py-3 rounded-xl font-bold flex justify-center items-center gap-2"><i class="ph ph-navigation-arrow text-lg"></i> Deteksi</button>
-                                <button type="button" onClick={() => setShowPointPicker(true)} className="flex-1 bg-white border border-slate-300 py-3 rounded-xl font-bold flex justify-center items-center gap-2"><i class="ph ph-map-pin text-lg"></i> Peta</button>
+                                <button type="button" onClick={getGPS} className="flex-1 bg-blue-50 text-blue-700 py-3 rounded-xl font-bold flex justify-center items-center gap-2"><i className="ph ph-navigation-arrow text-lg"></i> Deteksi</button>
+                                <button type="button" onClick={() => setShowPointPicker(true)} className="flex-1 bg-white border border-slate-300 py-3 rounded-xl font-bold flex justify-center items-center gap-2"><i className="ph ph-map-pin text-lg"></i> Peta</button>
                             </div>
                             <div className="grid grid-cols-2 gap-3">
                                 <input type="number" step="any" placeholder="Latitude" className="w-full p-3 border rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500" value={formData.lat} onChange={e => setFormData({...formData, lat: e.target.value})} />
@@ -416,10 +423,10 @@
                         <div className="space-y-3"><label className="font-bold text-slate-700">6. Foto Dokumentasi</label>
                             <div className="flex flex-wrap gap-3">
                                 {formData.photos.map((p, i) => (
-                                    <div key={i} className="relative w-20 h-20 border rounded-xl overflow-hidden"><img src={p} className="w-full h-full object-cover" /><button type="button" onClick={() => setFormData(prev => ({...prev, photos: prev.photos.filter((_, idx)=>idx!==i)}))} className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1"><i class="ph ph-x"></i></button></div>
+                                    <div key={i} className="relative w-20 h-20 border rounded-xl overflow-hidden"><img src={p} className="w-full h-full object-cover" /><button type="button" onClick={() => setFormData(prev => ({...prev, photos: prev.photos.filter((_, idx)=>idx!==i)}))} className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1"><i className="ph ph-x"></i></button></div>
                                 ))}
                                 <label className="w-20 h-20 border-2 border-dashed border-blue-300 bg-blue-50 rounded-xl flex flex-col items-center justify-center text-blue-500 cursor-pointer">
-                                    <i class="ph ph-camera text-2xl"></i><span className="text-[10px] font-bold">Tambah</span>
+                                    <i className="ph ph-camera text-2xl"></i><span className="text-[10px] font-bold">Tambah</span>
                                     <input type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoUpload} />
                                 </label>
                             </div>
@@ -429,8 +436,8 @@
                             <div className="bg-slate-50 border p-4 rounded-2xl text-center">
                                 {path.length === 0 ? (
                                     <>
-                                        <i class="ph ph-activity text-3xl text-slate-400 mb-2"></i><p className="text-sm text-slate-500 mb-4">Belum ada jalur rute dibuat.</p>
-                                        <button type="button" onClick={() => setShowTrackCreator(true)} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold flex justify-center items-center gap-2"><i class="ph ph-map-trifold text-lg"></i> Buka Editor Rute (Manual/GPS)</button>
+                                        <i className="ph ph-activity text-3xl text-slate-400 mb-2"></i><p className="text-sm text-slate-500 mb-4">Belum ada jalur rute dibuat.</p>
+                                        <button type="button" onClick={() => setShowTrackCreator(true)} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold flex justify-center items-center gap-2"><i className="ph ph-map-trifold text-lg"></i> Buka Editor Rute (Manual/GPS)</button>
                                     </>
                                 ) : (
                                     <div className="text-left">
@@ -444,7 +451,7 @@
                             </div>
                         </div>
 
-                        <button disabled={isSaving} type="submit" className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-lg flex justify-center items-center gap-2 shadow-lg disabled:opacity-50"><i class="ph ph-floppy-disk text-xl"></i> {isSaving ? 'Menyimpan...' : 'Simpan Data Peta'}</button>
+                        <button disabled={isSaving} type="submit" className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-lg flex justify-center items-center gap-2 shadow-lg disabled:opacity-50"><i className="ph ph-floppy-disk text-xl"></i> {isSaving ? 'Menyimpan...' : 'Simpan Data Peta'}</button>
                         
                         {showPointPicker && <MapPicker initialLat={formData.lat} initialLng={formData.lng} onSelect={(lat, lng) => {setFormData({...formData, lat, lng}); setShowPointPicker(false);}} onClose={() => setShowPointPicker(false)} />}
                         {showTrackCreator && <TrackCreator initialPath={path} onSave={(newPath) => {setPath(newPath); setShowTrackCreator(false);}} onClose={() => setShowTrackCreator(false)} />}
@@ -463,7 +470,7 @@
                 // Initialize map once
                 useEffect(() => {
                     let timeoutId;
-                    if (!mapInstance.current) {
+                    if (!mapInstance.current && mapRef.current) {
                         mapInstance.current = L.map(mapRef.current, { zoomControl: false }).setView([-0.485, 117.155], 14);
                         const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapInstance.current);
                         const esri = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}').addTo(mapInstance.current);
@@ -473,15 +480,16 @@
                         markersGroup.current = L.layerGroup().addTo(mapInstance.current);
 
                         timeoutId = setTimeout(() => {
-                            if (mapInstance.current && mapInstance.current._container) {
+                            if (mapInstance.current && mapRef.current) {
                                 mapInstance.current.invalidateSize();
                             }
-                        }, 200);
+                        }, 300);
                     }
 
                     return () => {
                         if (timeoutId) clearTimeout(timeoutId);
                         if (mapInstance.current) {
+                            mapInstance.current.off();
                             mapInstance.current.remove();
                             mapInstance.current = null;
                         }
@@ -537,11 +545,11 @@
                     {/* Header Utama */}
                     <header className="bg-slate-900 text-white p-4 flex justify-between items-center shadow-md z-20">
                         <div className="flex items-center gap-3">
-                            <div className="bg-blue-500 p-2 rounded-lg"><i class="ph ph-map-pin-line text-xl"></i></div>
+                            <div className="bg-blue-500 p-2 rounded-lg"><i className="ph ph-map-pin-line text-xl"></i></div>
                             <div><h1 className="font-extrabold leading-tight">GIS Kelurahan</h1><span className="text-[10px] text-blue-200 block">Sistem Pemetaan Jalan</span></div>
                         </div>
                         <button onClick={() => setShowDbSettings(true)} className="bg-slate-800 p-2 rounded-lg text-xs font-bold border border-slate-700 flex items-center gap-2">
-                            <i class="ph ph-database"></i> {supabaseClient ? <span className="text-green-400">Online</span> : <span className="text-yellow-400">Offline/Lokal</span>}
+                            <i className="ph ph-database"></i> {supabaseClient ? <span className="text-green-400">Online</span> : <span className="text-yellow-400">Offline/Lokal</span>}
                         </button>
                     </header>
 
@@ -553,10 +561,10 @@
                     {/* Navigasi Bawah */}
                     <nav className="bg-white border-t flex justify-around p-2 shadow-[0_-5px_15px_rgba(0,0,0,0.05)] z-20">
                         <button onClick={() => setActiveTab('map')} className={`flex-1 flex flex-col items-center py-2 rounded-xl font-bold transition-colors ${activeTab === 'map' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
-                            <i class="ph ph-map-trifold text-2xl mb-1"></i> <span className="text-[10px]">Lihat Peta</span>
+                            <i className="ph ph-map-trifold text-2xl mb-1"></i> <span className="text-[10px]">Lihat Peta</span>
                         </button>
                         <button onClick={() => setActiveTab('input')} className={`flex-1 flex flex-col items-center py-2 rounded-xl font-bold transition-colors ${activeTab === 'input' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
-                            <i class="ph ph-plus-square text-2xl mb-1"></i> <span className="text-[10px]">Input Data</span>
+                            <i className="ph ph-plus-square text-2xl mb-1"></i> <span className="text-[10px]">Input Data</span>
                         </button>
                     </nav>
 
